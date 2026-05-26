@@ -1,0 +1,208 @@
+{
+  "name": "BabyKawaii — Social DM Order Intake (Facebook / Instagram / TikTok)",
+  "notes": "Admin กรอกออเดอร์ที่รับมาจาก DM แล้วกด Save ในระบบ → n8n รับ webhook → แจ้ง LINE Admin ทันที",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "babykawaii-events",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "wh-events",
+      "name": "📥 รับ Event จาก BabyKawaii",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "babykawaii-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event }}",
+              "operation": "equals",
+              "value2": "new_order"
+            }
+          ]
+        }
+      },
+      "id": "if-new-order",
+      "name": "ออเดอร์ใหม่?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\n\nconst platformIcons = {\n  facebook: '📘 Facebook DM',\n  instagram: '📸 Instagram DM',\n  tiktok: '🎵 TikTok Shop',\n  walkin: '🏪 หน้าร้าน'\n};\nconst platformLabel = platformIcons[d.platform] ?? d.platform ?? 'ไม่ระบุ';\n\nconst msg = `🛍️ ออเดอร์ใหม่!\n#${d.order_number}\n📱 ${platformLabel}\n👤 ลูกค้า: ${d.customer}\n💰 ยอด: ฿${Number(d.total).toLocaleString('th-TH')}\n\n🔗 ดูออเดอร์: YOUR_SITE_URL/pages/orders.php`;\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "format-order",
+      "name": "📝 จัดรูปแบบข้อความออเดอร์",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event }}",
+              "operation": "equals",
+              "value2": "low_stock"
+            }
+          ]
+        }
+      },
+      "id": "if-low-stock",
+      "name": "สต็อกต่ำ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [480, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst msg = `⚠️ แจ้งเตือนสต็อกต่ำ!\n📦 ${d.product_name}\nไซต์: ${d.size} / สี: ${d.color}\nเหลือ: ${d.quantity} ชิ้น (ต่ำกว่า ${d.min_alert})\n\n🔗 ดูสต็อก: YOUR_SITE_URL/pages/stock.php`;\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "format-stock",
+      "name": "📝 จัดรูปแบบข้อความสต็อก",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event }}",
+              "operation": "equals",
+              "value2": "order_shipped"
+            }
+          ]
+        }
+      },
+      "id": "if-shipped",
+      "name": "จัดส่งแล้ว?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [480, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst msg = `🚚 จัดส่งออเดอร์แล้ว!\n#${d.order_number}\n👤 ${d.customer}\n📬 เลขพัสดุ: ${d.tracking_number}\n\n🔗 ดูออเดอร์: YOUR_SITE_URL/pages/orders.php`;\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "format-shipped",
+      "name": "📝 จัดรูปแบบข้อความจัดส่ง",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 700]
+    },
+    {
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_LINE_CHANNEL_ACCESS_TOKEN" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to",       "value": "YOUR_LINE_ADMIN_USER_ID" },
+            { "name": "messages", "value": "={{ [{\"type\":\"text\",\"text\":$json.message}] }}" }
+          ]
+        }
+      },
+      "id": "line-push-order",
+      "name": "📲 LINE Push — ออเดอร์ใหม่",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 180]
+    },
+    {
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_LINE_CHANNEL_ACCESS_TOKEN" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to",       "value": "YOUR_LINE_ADMIN_USER_ID" },
+            { "name": "messages", "value": "={{ [{\"type\":\"text\",\"text\":$json.message}] }}" }
+          ]
+        }
+      },
+      "id": "line-push-stock",
+      "name": "📲 LINE Push — สต็อกต่ำ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 500]
+    },
+    {
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_LINE_CHANNEL_ACCESS_TOKEN" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to",       "value": "YOUR_LINE_ADMIN_USER_ID" },
+            { "name": "messages", "value": "={{ [{\"type\":\"text\",\"text\":$json.message}] }}" }
+          ]
+        }
+      },
+      "id": "line-push-shipped",
+      "name": "📲 LINE Push — จัดส่งแล้ว",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 700]
+    }
+  ],
+  "connections": {
+    "📥 รับ Event จาก BabyKawaii": {
+      "main": [[{ "node": "ออเดอร์ใหม่?", "type": "main", "index": 0 }]]
+    },
+    "ออเดอร์ใหม่?": {
+      "main": [
+        [{ "node": "📝 จัดรูปแบบข้อความออเดอร์", "type": "main", "index": 0 }],
+        [{ "node": "สต็อกต่ำ?", "type": "main", "index": 0 }]
+      ]
+    },
+    "📝 จัดรูปแบบข้อความออเดอร์": {
+      "main": [[{ "node": "📲 LINE Push — ออเดอร์ใหม่", "type": "main", "index": 0 }]]
+    },
+    "สต็อกต่ำ?": {
+      "main": [
+        [{ "node": "📝 จัดรูปแบบข้อความสต็อก", "type": "main", "index": 0 }],
+        [{ "node": "จัดส่งแล้ว?", "type": "main", "index": 0 }]
+      ]
+    },
+    "📝 จัดรูปแบบข้อความสต็อก": {
+      "main": [[{ "node": "📲 LINE Push — สต็อกต่ำ", "type": "main", "index": 0 }]]
+    },
+    "จัดส่งแล้ว?": {
+      "main": [
+        [{ "node": "📝 จัดรูปแบบข้อความจัดส่ง", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "📝 จัดรูปแบบข้อความจัดส่ง": {
+      "main": [[{ "node": "📲 LINE Push — จัดส่งแล้ว", "type": "main", "index": 0 }]]
+    }
+  }
+}

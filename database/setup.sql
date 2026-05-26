@@ -257,13 +257,13 @@ INSERT IGNORE INTO categories (name, slug, icon, sort_order) VALUES
 ('ชุดว่ายน้ำ', 'swimwear', '🏊', 9),
 ('อื่นๆ', 'others', '🎁', 10);
 
--- Platforms
+-- Platforms (ช่องทางรับออเดอร์)
+-- LINE OA ไม่อยู่ที่นี่ — ใช้เป็นช่องแจ้งเตือน Admin เท่านั้น (ตั้งค่าใน Settings → เชื่อมต่อระบบ)
 INSERT IGNORE INTO platforms (name, slug, icon, color, commission_rate) VALUES
-('Facebook Page', 'facebook', '📘', '#1877F2', 0.00),
-('TikTok Shop', 'tiktok', '🎵', '#000000', 5.00),
-('Instagram', 'instagram', '📸', '#E4405F', 0.00),
-('Line Official', 'line', '💬', '#00B900', 0.00),
-('หน้าร้าน', 'walkin', '🏪', '#FF6B6B', 0.00);
+('Facebook Page DM', 'facebook', '📘', '#1877F2', 0.00),
+('TikTok Shop',      'tiktok',   '🎵', '#010101', 5.00),
+('Instagram DM',     'instagram','📸', '#E4405F', 0.00),
+('หน้าร้าน',         'walkin',   '🏪', '#FF6B6B', 0.00);
 
 -- Default products (ตัวอย่าง)
 INSERT IGNORE INTO products (sku, name, category_id, description, selling_price, cost_price, status) VALUES

@@ -66,10 +66,9 @@ if (method() === 'POST') {
     $customerName  = trim($body['customer_name'] ?? '');
     $customerPhone = trim($body['customer_phone'] ?? '');
     $customerAddr  = trim($body['customer_address'] ?? '');
-    $platformSlug  = $body['platform'] ?? 'line';
+    $platformSlug  = $body['platform'] ?? 'facebook'; // default: Facebook Page DM
     $items         = $body['items'] ?? [];
     $notes         = $body['notes'] ?? '';
-    $lineUserId    = $body['line_user_id'] ?? null;
 
     if (!$customerName || empty($items)) jsonErr('customer_name and items are required');
 
