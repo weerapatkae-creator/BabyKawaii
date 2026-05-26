@@ -1,0 +1,688 @@
+<?php
+// ── Bootstrap + auth BEFORE any output ───────────────────────────────────────
+require_once __DIR__ . '/../config/database.php';
+requireLogin();
+$pdo = getDB();
+
+/* ── AJAX handlers (must run before ANY HTML output) ─────────────────────── */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
+    header('Content-Type: application/json');
+
+    // Send reply
+    if ($_POST['ajax'] === 'send') {
+        $convId  = (int)$_POST['conv_id'];
+        $content = trim($_POST['content'] ?? '');
+        if (!$convId || !$content) { echo json_encode(['ok'=>false]); exit; }
+
+        $pdo->prepare("INSERT INTO messages (conversation_id,direction,content,message_type,sent_by,sent_at) VALUES (?,?,?,?,?,NOW())")
+            ->execute([$convId, 'outbound', $content, 'text', $_SESSION['admin_id'] ?? 1]);
+        $msgId = $pdo->lastInsertId();
+
+        $pdo->prepare("UPDATE conversations SET last_message=?,last_message_at=NOW(),status='open',updated_at=NOW() WHERE id=?")
+            ->execute([$content, $convId]);
+
+        $conv = $pdo->prepare("SELECT c.*, p.name as platform_name FROM conversations c LEFT JOIN platforms p ON p.id=c.platform_id WHERE c.id=?");
+        $conv->execute([$convId]);
+        $conv = $conv->fetch();
+
+        if ($conv) {
+            triggerN8n('inbox_reply', [
+                'conversation_id' => $convId,
+                'platform'        => $conv['platform_name'] ?? '',
+                'customer_uid'    => $conv['customer_uid'],
+                'customer_name'   => $conv['customer_name'],
+                'message'         => $content,
+            ]);
+        }
+
+        echo json_encode(['ok'=>true, 'msg_id'=>$msgId, 'sent_at'=>date('H:i')]);
+        exit;
+    }
+
+    // Load messages (marks as read, supports since_id for polling)
+    if ($_POST['ajax'] === 'messages') {
+        $convId  = (int)$_POST['conv_id'];
+        $sinceId = (int)($_POST['since_id'] ?? 0);
+
+        $pdo->prepare("UPDATE messages SET is_read=1 WHERE conversation_id=? AND direction='inbound'")->execute([$convId]);
+        $pdo->prepare("UPDATE conversations SET unread_count=0 WHERE id=?")->execute([$convId]);
+
+        if ($sinceId) {
+            // Poll mode — only new messages
+            $msgs = $pdo->prepare("SELECT m.*,u.name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? AND m.id>? ORDER BY m.sent_at ASC");
+            $msgs->execute([$convId, $sinceId]);
+        } else {
+            // Initial load — last 100
+            $msgs = $pdo->prepare("SELECT m.*,u.name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at ASC LIMIT 100");
+            $msgs->execute([$convId]);
+        }
+        echo json_encode($msgs->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+
+    // Update conversation status
+    if ($_POST['ajax'] === 'status') {
+        $pdo->prepare("UPDATE conversations SET status=?,updated_at=NOW() WHERE id=?")->execute([$_POST['status'], (int)$_POST['conv_id']]);
+        echo json_encode(['ok'=>true]);
+        exit;
+    }
+
+    // Save quick reply
+    if ($_POST['ajax'] === 'save_qr') {
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id) {
+            $pdo->prepare("UPDATE quick_replies SET label=?,content=? WHERE id=?")->execute([trim($_POST['label']),trim($_POST['content']),$id]);
+        } else {
+            $pdo->prepare("INSERT INTO quick_replies (label,content) VALUES (?,?)")->execute([trim($_POST['label']),trim($_POST['content'])]);
+        }
+        echo json_encode(['ok'=>true]);
+        exit;
+    }
+
+    // Delete quick reply
+    if ($_POST['ajax'] === 'delete_qr') {
+        $pdo->prepare("DELETE FROM quick_replies WHERE id=?")->execute([(int)$_POST['id']]);
+        echo json_encode(['ok'=>true]);
+        exit;
+    }
+
+    echo json_encode(['ok'=>false]);
+    exit;
+}
+
+// Badge/poll GET handler
+if (isset($_GET['ajax_badge'])) {
+    header('Content-Type: application/json');
+    try {
+        $unread = $pdo->query("SELECT COALESCE(SUM(unread_count),0) FROM conversations WHERE status!='closed'")->fetchColumn();
+        $open   = $pdo->query("SELECT COUNT(*) FROM conversations WHERE status='open'")->fetchColumn();
+        echo json_encode(['unread'=>(int)$unread,'open'=>(int)$open]);
+    } catch(Exception $e) {
+        echo json_encode(['unread'=>0,'open'=>0]);
+    }
+    exit;
+}
+
+// ── Now safe to output HTML ───────────────────────────────────────────────────
+$pageTitle = 'Inbox — ข้อความลูกค้า';
+require_once __DIR__ . '/../includes/header.php';
+
+/* ── Data ───────────────────────────────────────────────────────── */
+$statusFilter   = $_GET['status']   ?? 'open';
+$platformFilter = (int)($_GET['platform'] ?? 0);
+$search         = trim($_GET['q']   ?? '');
+$activeConvId   = (int)($_GET['conv'] ?? 0);
+
+$where  = ['1=1'];
+$params = [];
+if ($statusFilter !== 'all') { $where[] = 'c.status = ?'; $params[] = $statusFilter; }
+if ($platformFilter)         { $where[] = 'c.platform_id = ?'; $params[] = $platformFilter; }
+if ($search)                 { $where[] = '(c.customer_name LIKE ? OR c.last_message LIKE ?)'; $params[] = "%$search%"; $params[] = "%$search%"; }
+
+try {
+    $convStmt = $pdo->prepare(
+        "SELECT c.*, p.name as platform_name, p.icon as platform_icon, p.color as platform_color
+         FROM conversations c
+         LEFT JOIN platforms p ON p.id = c.platform_id
+         WHERE " . implode(' AND ', $where) . "
+         ORDER BY c.last_message_at DESC LIMIT 80"
+    );
+    $convStmt->execute($params);
+    $conversations = $convStmt->fetchAll();
+
+    $platforms    = $pdo->query("SELECT * FROM platforms WHERE is_active=1 ORDER BY name")->fetchAll();
+    $quickReplies = $pdo->query("SELECT * FROM quick_replies WHERE is_active=1 ORDER BY sort_order")->fetchAll();
+
+    $stats = $pdo->query("SELECT
+        SUM(status='open')    AS open_count,
+        SUM(status='pending') AS pending_count,
+        SUM(status='closed')  AS closed_count,
+        SUM(unread_count > 0) AS unread_convs
+        FROM conversations")->fetch();
+
+    $activeConv = null;
+    if ($activeConvId) {
+        $s = $pdo->prepare("SELECT c.*, p.name as platform_name, p.icon as platform_icon, p.color as platform_color FROM conversations c LEFT JOIN platforms p ON p.id=c.platform_id WHERE c.id=?");
+        $s->execute([$activeConvId]);
+        $activeConv = $s->fetch();
+    }
+} catch (Exception $e) {
+    // Tables may not exist yet — show empty state
+    $conversations = []; $platforms = []; $quickReplies = [];
+    $stats = ['open_count'=>0,'pending_count'=>0,'closed_count'=>0,'unread_convs'=>0];
+    $activeConv = null;
+}
+?>
+
+<style>
+.inbox-wrap { display:flex; height:calc(100vh - 130px); gap:0; overflow:hidden; border-radius:12px; border:1px solid var(--border-color); background:#fff; }
+
+/* Left panel */
+.inbox-list { width:300px; min-width:260px; flex-shrink:0; border-right:1px solid var(--border-color); display:flex; flex-direction:column; }
+.inbox-list-head { padding:10px 12px; border-bottom:1px solid var(--border-color); }
+.inbox-search { width:100%; border:1px solid var(--border-color); border-radius:8px; padding:6px 11px; font-size:0.82rem; font-family:inherit; }
+.inbox-search:focus { outline:none; border-color:var(--pink); }
+.conv-list { overflow-y:auto; flex:1; }
+.conv-item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #f5f5f5; display:flex; gap:9px; align-items:flex-start; transition:background .12s; }
+.conv-item:hover { background:#fafafa; }
+.conv-item.active { background:#FFF0F5; border-left:3px solid var(--pink); padding-left:9px; }
+.conv-item.unread .conv-name { font-weight:700; }
+.conv-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#FF85A2,#9B72CF); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0; }
+.conv-body { flex:1; min-width:0; }
+.conv-name { font-size:0.84rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.conv-preview { font-size:0.74rem; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.conv-meta { display:flex; justify-content:space-between; align-items:center; margin-top:2px; }
+.conv-time { font-size:0.66rem; color:#aaa; }
+.conv-badge { background:var(--pink); color:#fff; border-radius:50%; width:17px; height:17px; display:flex; align-items:center; justify-content:center; font-size:0.62rem; font-weight:700; }
+.platform-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:3px; }
+
+/* Right panel */
+.inbox-chat { flex:1; display:flex; flex-direction:column; background:#f8f8f8; min-width:0; }
+.chat-head { background:#fff; padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:10px; }
+.chat-head-info { flex:1; min-width:0; }
+.chat-head-name { font-weight:700; font-size:0.92rem; }
+.chat-head-meta { font-size:0.73rem; color:#888; }
+.chat-messages { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:8px; }
+.msg-row { display:flex; gap:7px; align-items:flex-end; }
+.msg-row.outbound { flex-direction:row-reverse; }
+.msg-bubble { max-width:65%; padding:8px 12px; border-radius:14px; font-size:0.83rem; line-height:1.5; word-break:break-word; }
+.msg-row.inbound  .msg-bubble { background:#fff; border:1px solid #eee; border-bottom-left-radius:3px; }
+.msg-row.outbound .msg-bubble { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border-bottom-right-radius:3px; }
+.msg-time { font-size:0.63rem; color:#bbb; margin-top:3px; display:block; }
+.msg-row.outbound .msg-time { text-align:right; color:rgba(255,255,255,0.75); }
+.msg-system { text-align:center; font-size:0.71rem; color:#bbb; padding:3px 0; font-style:italic; }
+.msg-avatar { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,#FF85A2,#9B72CF); color:#fff; display:flex; align-items:center; justify-content:center; font-size:0.66rem; font-weight:700; flex-shrink:0; }
+.msg-img { max-width:200px; border-radius:10px; cursor:pointer; }
+
+/* Reply box */
+.chat-reply { background:#fff; border-top:1px solid var(--border-color); padding:10px 14px; }
+.qr-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+.qr-chip { background:#f0f0f5; border:1px solid #ddd; border-radius:16px; padding:3px 10px; font-size:0.74rem; cursor:pointer; transition:all .12s; white-space:nowrap; }
+.qr-chip:hover { background:var(--pink); color:#fff; border-color:var(--pink); }
+.reply-input-row { display:flex; gap:8px; align-items:flex-end; }
+.reply-textarea { flex:1; border:1px solid var(--border-color); border-radius:10px; padding:8px 11px; font-family:inherit; font-size:0.83rem; resize:none; min-height:38px; max-height:110px; overflow-y:auto; }
+.reply-textarea:focus { outline:none; border-color:var(--pink); }
+.btn-send { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border:none; border-radius:10px; padding:8px 16px; cursor:pointer; font-family:inherit; font-weight:600; white-space:nowrap; transition:opacity .15s; }
+.btn-send:hover { opacity:0.88; }
+.btn-send:disabled { opacity:0.5; cursor:not-allowed; }
+
+/* Status tabs */
+.status-tabs { display:flex; border-bottom:1px solid var(--border-color); }
+.status-tab { flex:1; text-align:center; padding:7px 2px; font-size:0.76rem; cursor:pointer; border-bottom:2px solid transparent; color:#888; text-decoration:none; transition:color .12s; }
+.status-tab.active { color:var(--pink); border-bottom-color:var(--pink); font-weight:600; }
+.status-tab .tab-count { display:inline-block; background:#eee; border-radius:8px; padding:0px 5px; font-size:0.63rem; margin-left:2px; }
+.status-tab.active .tab-count { background:var(--pink); color:#fff; }
+.inbox-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#aaa; gap:8px; }
+
+/* Typing indicator */
+.typing-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#aaa; animation:typing .9s infinite; }
+.typing-dot:nth-child(2) { animation-delay:.2s; }
+.typing-dot:nth-child(3) { animation-delay:.4s; }
+@keyframes typing { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-4px)} }
+
+@media(max-width:768px){
+    .inbox-list { width:100%; position:absolute; z-index:5; }
+    .inbox-list.hide-mobile { display:none; }
+}
+</style>
+
+<div class="container-fluid fade-in px-0">
+    <!-- Header bar -->
+    <div class="d-flex gap-2 px-3 pt-3 pb-2 flex-wrap align-items-center">
+        <h1 class="page-title mb-0">💬 Inbox</h1>
+        <div class="d-flex gap-2 ms-auto flex-wrap align-items-center">
+            <span class="badge bg-success">🟢 เปิด <?= $stats['open_count'] ?? 0 ?></span>
+            <span class="badge bg-warning text-dark">⏳ รอ <?= $stats['pending_count'] ?? 0 ?></span>
+            <span class="badge bg-secondary">🔒 ปิด <?= $stats['closed_count'] ?? 0 ?></span>
+            <?php if (($stats['unread_convs'] ?? 0) > 0): ?>
+            <span class="badge bg-danger">🔔 ยังไม่ได้อ่าน <?= $stats['unread_convs'] ?></span>
+            <?php endif; ?>
+            <button class="btn btn-sm btn-outline-secondary" onclick="openQrManager()">⚡ ข้อความสำเร็จรูป</button>
+        </div>
+    </div>
+
+    <div class="inbox-wrap mx-3 mb-3" id="inboxWrap">
+
+        <!-- LEFT: conversation list -->
+        <div class="inbox-list" id="inboxList">
+            <div class="inbox-list-head">
+                <input type="text" id="searchInput" class="inbox-search" placeholder="🔍 ค้นหาชื่อ / ข้อความ..."
+                       value="<?= htmlspecialchars($search) ?>" oninput="filterConvs(this.value)">
+                <?php if (!empty($platforms)): ?>
+                <div class="d-flex gap-1 mt-2 flex-wrap">
+                    <?php foreach ($platforms as $pf): ?>
+                    <a href="?status=<?= $statusFilter ?>&platform=<?= $pf['id'] ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
+                       class="badge text-decoration-none"
+                       style="background:<?= $platformFilter==$pf['id']?$pf['color']:'#eee' ?>;color:<?= $platformFilter==$pf['id']?'#fff':'#666' ?>;">
+                        <?= $pf['icon'] ?> <?= htmlspecialchars($pf['name']) ?>
+                    </a>
+                    <?php endforeach; ?>
+                    <?php if ($platformFilter): ?>
+                    <a href="?status=<?= $statusFilter ?>" class="badge bg-secondary text-decoration-none">✕</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Status tabs -->
+            <div class="status-tabs">
+                <?php
+                $tabCounts = [
+                    'open'    => $stats['open_count']    ?? 0,
+                    'pending' => $stats['pending_count'] ?? 0,
+                    'closed'  => $stats['closed_count']  ?? 0,
+                    'all'     => ($stats['open_count']??0)+($stats['pending_count']??0)+($stats['closed_count']??0),
+                ];
+                foreach (['open'=>'เปิด','pending'=>'รอตอบ','closed'=>'ปิด','all'=>'ทั้งหมด'] as $s => $label): ?>
+                <a href="?status=<?= $s ?><?= $platformFilter?'&platform='.$platformFilter:'' ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
+                   class="status-tab <?= $statusFilter===$s?'active':'' ?>">
+                    <?= $label ?><span class="tab-count"><?= $tabCounts[$s] ?></span>
+                </a>
+                <?php endforeach; ?>
+            </div>
+
+            <!-- Conversation list -->
+            <div class="conv-list" id="convList">
+                <?php if (empty($conversations)): ?>
+                <div class="text-center py-5 text-muted" style="font-size:0.85rem;">
+                    <i class="fas fa-comment-slash fa-2x mb-2 d-block opacity-25"></i>
+                    ไม่มีบทสนทนา<br>
+                    <span class="opacity-50" style="font-size:0.75rem;">ข้อความจะปรากฏเมื่อลูกค้าติดต่อผ่าน API</span>
+                </div>
+                <?php endif; ?>
+                <?php foreach ($conversations as $conv):
+                    $initial  = mb_substr($conv['customer_name'] ?: '?', 0, 1);
+                    $isActive = $activeConvId === (int)$conv['id'];
+                    $hasUnread= $conv['unread_count'] > 0;
+                    $timeAgoStr = $conv['last_message_at'] ? timeAgo($conv['last_message_at']) : '';
+                ?>
+                <div class="conv-item <?= $isActive?'active':'' ?> <?= $hasUnread?'unread':'' ?>"
+                     data-conv="<?= $conv['id'] ?>"
+                     onclick="openConv(<?= $conv['id'] ?>)">
+                    <div class="conv-avatar"
+                         style="<?= $conv['platform_color'] ? 'background:linear-gradient(135deg,'.$conv['platform_color'].','.adjustColor($conv['platform_color']).');' : '' ?>">
+                        <?= htmlspecialchars($initial) ?>
+                    </div>
+                    <div class="conv-body">
+                        <div class="d-flex justify-content-between align-items-start gap-1">
+                            <div class="conv-name">
+                                <?php if ($conv['platform_color']): ?>
+                                <span class="platform-dot" style="background:<?= $conv['platform_color'] ?>;"></span>
+                                <?php endif; ?>
+                                <?= htmlspecialchars($conv['customer_name'] ?: 'ไม่ระบุชื่อ') ?>
+                            </div>
+                            <?php if ($hasUnread): ?>
+                            <span class="conv-badge"><?= min($conv['unread_count'],9) ?><?= $conv['unread_count']>9?'+':'' ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="conv-preview"><?= htmlspecialchars(mb_substr($conv['last_message'] ?? '—', 0, 50)) ?></div>
+                        <div class="conv-meta">
+                            <span class="conv-time"><?= $timeAgoStr ?></span>
+                            <span style="font-size:0.67rem;color:#bbb;"><?= $conv['platform_icon'] ?? '' ?></span>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <!-- RIGHT: chat panel -->
+        <div class="inbox-chat" id="chatPanel">
+            <?php if ($activeConv): ?>
+            <!-- Chat header -->
+            <div class="chat-head">
+                <button class="btn btn-sm btn-outline-secondary d-md-none me-1" onclick="toggleList()">☰</button>
+                <div class="conv-avatar" style="width:38px;height:38px;font-size:0.9rem;
+                    <?= $activeConv['platform_color']?'background:linear-gradient(135deg,'.$activeConv['platform_color'].','.adjustColor($activeConv['platform_color']).');':'' ?>">
+                    <?= mb_substr($activeConv['customer_name'] ?: '?', 0, 1) ?>
+                </div>
+                <div class="chat-head-info">
+                    <div class="chat-head-name"><?= htmlspecialchars($activeConv['customer_name'] ?: 'ไม่ระบุชื่อ') ?></div>
+                    <div class="chat-head-meta d-flex align-items-center gap-2 flex-wrap">
+                        <?php if ($activeConv['platform_icon']): ?>
+                        <span style="background:<?= $activeConv['platform_color'] ?>;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">
+                            <?= $activeConv['platform_icon'] ?> <?= htmlspecialchars($activeConv['platform_name']) ?>
+                        </span>
+                        <?php endif; ?>
+                        <span class="text-muted" style="font-size:0.7rem;">UID: <?= htmlspecialchars($activeConv['customer_uid']) ?></span>
+                        <span id="typingIndicator" style="display:none;font-size:0.72rem;color:#aaa;">
+                            กำลังพิมพ์<span class="typing-dot ms-1"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+                        </span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 align-items-center flex-shrink-0">
+                    <select class="form-select form-select-sm" style="width:auto;font-size:0.78rem;" onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
+                        <option value="open"    <?= $activeConv['status']==='open'?'selected':'' ?>>🟢 เปิด</option>
+                        <option value="pending" <?= $activeConv['status']==='pending'?'selected':'' ?>>⏳ รอตอบ</option>
+                        <option value="closed"  <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 ปิด</option>
+                    </select>
+                    <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
+                       class="btn btn-sm btn-outline-primary" title="ดูออเดอร์">
+                        <i class="fas fa-box-open"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Messages area -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="msg-system" id="loadingMsg">
+                    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+                </div>
+            </div>
+
+            <!-- Reply box -->
+            <div class="chat-reply">
+                <?php if (!empty($quickReplies)): ?>
+                <div class="qr-chips" id="qrChips">
+                    <?php foreach ($quickReplies as $qr): ?>
+                    <span class="qr-chip" onclick="useQR(<?= htmlspecialchars(json_encode($qr['content'])) ?>)"><?= htmlspecialchars($qr['label']) ?></span>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+                <div class="reply-input-row">
+                    <textarea id="replyText" class="reply-textarea" placeholder="พิมพ์ข้อความ... (Enter = ส่ง, Shift+Enter = ขึ้นบรรทัด)" rows="1"
+                              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply();}"
+                              oninput="autoResize(this)"></textarea>
+                    <button class="btn-send" id="btnSend" onclick="sendReply()">ส่ง ➤</button>
+                </div>
+            </div>
+
+            <?php else: ?>
+            <div class="inbox-empty">
+                <i class="fas fa-comments fa-3x opacity-25"></i>
+                <div style="font-size:0.88rem;">เลือกบทสนทนาจากรายการซ้าย</div>
+                <?php if (empty($conversations)): ?>
+                <div class="text-center mt-2 px-4" style="font-size:0.78rem;color:#bbb;max-width:300px;">
+                    ยังไม่มีข้อความ — เชื่อมต่อ Facebook/Instagram/TikTok ผ่าน n8n webhook แล้วข้อความจากลูกค้าจะปรากฏที่นี่
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Reply Manager Modal -->
+<div class="modal fade" id="qrModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#FFE4EC,#EDE7FF);">
+                <h5 class="modal-title">⚡ จัดการข้อความสำเร็จรูป</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="qrList">
+                    <?php foreach ($quickReplies as $qr): ?>
+                    <div class="d-flex gap-2 align-items-start mb-3 qr-row" data-id="<?= $qr['id'] ?>">
+                        <div class="flex-grow-1">
+                            <input type="text" class="form-control form-control-sm mb-1 qr-label" value="<?= htmlspecialchars($qr['label']) ?>" placeholder="ชื่อปุ่ม (เช่น ขอบคุณ)">
+                            <textarea class="form-control form-control-sm qr-content" rows="2" placeholder="ข้อความที่จะส่ง"><?= htmlspecialchars($qr['content']) ?></textarea>
+                        </div>
+                        <div class="d-flex flex-column gap-1 pt-1">
+                            <button class="btn btn-sm btn-outline-primary" onclick="saveQR(this)" title="บันทึก">💾</button>
+                            <button class="btn btn-sm btn-outline-danger"  onclick="deleteQR(this)" title="ลบ">🗑️</button>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary mt-2" onclick="addQRRow()">
+                    <i class="fas fa-plus me-1"></i> เพิ่มข้อความใหม่
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CONV_ID   = <?= $activeConvId ?: 'null' ?>;
+const SITE_URL  = '<?= SITE_URL ?>';
+let   lastMsgId = 0;
+let   pollTimer = null;
+
+/* ── HTML escaping ──────────────────────────────────────────────── */
+function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+/* ── Render a single message row ───────────────────────────────── */
+function renderMsg(m) {
+    if (m.message_type === 'system') return `<div class="msg-system">${esc(m.content)}</div>`;
+    const dir    = m.direction;
+    const time   = (m.sent_at || '').substring(11, 16);
+    const senderLabel = dir === 'outbound' && m.sender_name ? ` · ${esc(m.sender_name)}` : '';
+    const avatar = dir === 'inbound'
+        ? `<div class="msg-avatar">C</div>`
+        : `<div class="msg-avatar" style="background:linear-gradient(135deg,#FF85A2,#E8547A);">A</div>`;
+
+    let bubbleContent = '';
+    if (m.message_type === 'image' && m.media_url) {
+        bubbleContent = `<img src="${esc(m.media_url)}" class="msg-img" onclick="window.open('${esc(m.media_url)}','_blank')">`;
+    } else {
+        bubbleContent = esc(m.content);
+    }
+
+    return `<div class="msg-row ${dir}">
+        ${dir === 'inbound' ? avatar : ''}
+        <div>
+            <div class="msg-bubble">${bubbleContent}</div>
+            <span class="msg-time">${time}${senderLabel}</span>
+        </div>
+        ${dir === 'outbound' ? avatar : ''}
+    </div>`;
+}
+
+/* ── Load messages (initial load) ──────────────────────────────── */
+function loadMessages(convId) {
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'messages', conv_id: convId})
+    })
+    .then(r => r.json())
+    .then(msgs => {
+        const el = document.getElementById('chatMessages');
+        if (!msgs.length) {
+            el.innerHTML = '<div class="msg-system">ยังไม่มีข้อความในบทสนทนานี้</div>';
+            lastMsgId = 0;
+            return;
+        }
+        el.innerHTML = msgs.map(renderMsg).join('');
+        lastMsgId = msgs.reduce((max, m) => Math.max(max, m.id||0), 0);
+        el.scrollTop = el.scrollHeight;
+        startPolling(convId);
+    })
+    .catch(() => {
+        document.getElementById('chatMessages').innerHTML = '<div class="msg-system text-danger">โหลดข้อความไม่ได้ — ลองรีเฟรช</div>';
+    });
+}
+
+/* ── Poll for new messages ─────────────────────────────────────── */
+function startPolling(convId) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => pollMessages(convId), 4000);
+}
+
+function pollMessages(convId) {
+    if (!lastMsgId && lastMsgId !== 0) return;
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'messages', conv_id: convId, since_id: lastMsgId})
+    })
+    .then(r => r.json())
+    .then(msgs => {
+        if (!msgs.length) return;
+        const el = document.getElementById('chatMessages');
+        const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        msgs.forEach(m => {
+            el.insertAdjacentHTML('beforeend', renderMsg(m));
+            lastMsgId = Math.max(lastMsgId, m.id||0);
+        });
+        if (wasAtBottom) el.scrollTop = el.scrollHeight;
+    });
+}
+
+/* ── Open conversation ─────────────────────────────────────────── */
+function openConv(id) {
+    // Navigate to conversation
+    window.location.href = `?status=<?= $statusFilter ?>&conv=${id}<?= $platformFilter?'&platform='.$platformFilter:'' ?>`;
+}
+
+/* ── Send reply ─────────────────────────────────────────────────── */
+function sendReply() {
+    if (!CONV_ID) return;
+    const txt     = document.getElementById('replyText');
+    const btn     = document.getElementById('btnSend');
+    const content = txt.value.trim();
+    if (!content) return;
+
+    txt.value = '';
+    autoResize(txt);
+    btn.disabled = true;
+
+    // Optimistic UI
+    const el   = document.getElementById('chatMessages');
+    const now  = new Date().toTimeString().substring(0,5);
+    const tmpId = 'tmp_' + Date.now();
+    el.insertAdjacentHTML('beforeend', `<div class="msg-row outbound" id="${tmpId}">
+        <div>
+            <div class="msg-bubble">${esc(content)}</div>
+            <span class="msg-time">${now} · กำลังส่ง...</span>
+        </div>
+        <div class="msg-avatar" style="background:linear-gradient(135deg,#FF85A2,#E8547A);">A</div>
+    </div>`);
+    el.scrollTop = el.scrollHeight;
+
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'send', conv_id: CONV_ID, content})
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        if (res.ok) {
+            const tmp = document.getElementById(tmpId);
+            if (tmp) tmp.remove();
+            pollMessages(CONV_ID); // refresh immediately
+        }
+    })
+    .catch(() => { btn.disabled = false; });
+}
+
+/* ── Set status ─────────────────────────────────────────────────── */
+function setStatus(id, status) {
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'status', conv_id:id, status})
+    });
+}
+
+/* ── Quick replies ──────────────────────────────────────────────── */
+function useQR(content) {
+    const ta = document.getElementById('replyText');
+    if (ta) { ta.value = content; ta.focus(); autoResize(ta); }
+}
+
+function openQrManager() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('qrModal')).show();
+}
+
+function addQRRow() {
+    document.getElementById('qrList').insertAdjacentHTML('beforeend', `
+    <div class="d-flex gap-2 align-items-start mb-3 qr-row" data-id="0">
+        <div class="flex-grow-1">
+            <input type="text" class="form-control form-control-sm mb-1 qr-label" placeholder="ชื่อปุ่ม">
+            <textarea class="form-control form-control-sm qr-content" rows="2" placeholder="ข้อความที่จะส่ง"></textarea>
+        </div>
+        <div class="d-flex flex-column gap-1 pt-1">
+            <button class="btn btn-sm btn-outline-primary" onclick="saveQR(this)">💾</button>
+            <button class="btn btn-sm btn-outline-danger"  onclick="deleteQR(this)">🗑️</button>
+        </div>
+    </div>`);
+}
+
+function saveQR(btn) {
+    const row = btn.closest('.qr-row');
+    const label   = row.querySelector('.qr-label').value.trim();
+    const content = row.querySelector('.qr-content').value.trim();
+    if (!label || !content) { btn.textContent='⚠️'; setTimeout(()=>btn.textContent='💾',1200); return; }
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'save_qr', id: row.dataset.id||0, label, content})
+    }).then(r=>r.json()).then(res => {
+        if (res.ok) { btn.textContent='✅'; setTimeout(()=>btn.textContent='💾',1500); }
+    });
+}
+
+function deleteQR(btn) {
+    const row = btn.closest('.qr-row');
+    if (!confirm('ลบข้อความนี้?')) return;
+    const id = row.dataset.id;
+    if (id && id !== '0') {
+        fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({ajax:'delete_qr', id})
+        });
+    }
+    row.remove();
+}
+
+/* ── Filter convs (client-side) ────────────────────────────────── */
+function filterConvs(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.conv-item').forEach(el => {
+        const name = el.querySelector('.conv-name').textContent.toLowerCase();
+        const prev = el.querySelector('.conv-preview').textContent.toLowerCase();
+        el.style.display = (name.includes(q) || prev.includes(q)) ? '' : 'none';
+    });
+}
+
+/* ── Auto-resize textarea ───────────────────────────────────────── */
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 110) + 'px';
+}
+
+/* ── Toggle list on mobile ──────────────────────────────────────── */
+function toggleList() {
+    document.getElementById('inboxList').classList.toggle('hide-mobile');
+}
+
+/* ── Refresh sidebar conv list periodically ─────────────────────── */
+let sidebarTimer = null;
+function startSidebarRefresh() {
+    // Light refresh every 15s — reload just the unread badge counts
+    sidebarTimer = setInterval(() => {
+        fetch('?ajax_badge=1')
+            .then(r => r.json())
+            .then(data => {
+                // Update tab count badges if changed
+                document.querySelectorAll('.status-tab').forEach(tab => {
+                    const href = tab.getAttribute('href') || '';
+                    if (href.includes('status=open')) {
+                        const badge = tab.querySelector('.tab-count');
+                        if (badge) badge.textContent = data.open || badge.textContent;
+                    }
+                });
+            })
+            .catch(()=>{});
+    }, 15000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+if (CONV_ID) loadMessages(CONV_ID);
+startSidebarRefresh();
+</script>
+
+<?php
+function adjustColor(string $hex): string {
+    // Darken a hex color by ~20% for gradient
+    $hex = ltrim($hex, '#');
+    if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+    [$r,$g,$b] = [hexdec(substr($hex,0,2)), hexdec(substr($hex,2,2)), hexdec(substr($hex,4,2))];
+    return sprintf('#%02x%02x%02x', max(0,$r-40), max(0,$g-40), max(0,$b-40));
+}
+
+function timeAgo(string $datetime): string {
+    $diff = time() - strtotime($datetime);
+    if ($diff < 60)     return 'เมื่อกี้';
+    if ($diff < 3600)   return (int)($diff/60) . ' นาทีที่แล้ว';
+    if ($diff < 86400)  return (int)($diff/3600) . ' ชม.ที่แล้ว';
+    if ($diff < 604800) return (int)($diff/86400) . ' วันที่แล้ว';
+    return date('d/m', strtotime($datetime));
+}
+?>
+
+<?php include __DIR__ . '/../includes/footer.php'; ?>

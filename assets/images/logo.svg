@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BabyKawaii — Full Colour Logo  (use on white / light backgrounds)
+  viewBox: 300 × 165
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 165" role="img" aria-label="BabyKawaii Shop">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&amp;display=swap');
+    </style>
+
+    <!-- Warm peach drop-shadow on the onesie -->
+    <filter id="onesie-glow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#E8A090" flood-opacity="0.30"/>
+    </filter>
+
+    <!-- Subtle gradient fill for the onesie body -->
+    <linearGradient id="onesie-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#FDCFC0"/>
+      <stop offset="100%" stop-color="#F9B8A8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── Onesie icon: 70 × 96, centred at x=150 → translate(115,5) ── -->
+  <g transform="translate(115,5)" filter="url(#onesie-glow)">
+
+    <!--
+      Path breakdown (clockwise from top-left of left strap):
+        – Left/right straps with rounded outer corners
+        – Neckline dips to y=21 at centre
+        – Armhole curves (slight outward bow)
+        – Rounded lower corners
+    -->
+    <path d="
+      M  3,0  Q  0,0  0,4
+      L  0,35 Q -1,43  5,44
+      L  5,88 Q  5,96 13,96
+      L 57,96 Q 65,96 65,88
+      L 65,44 Q 71,43 70,35
+      L 70,4  Q 70,0  67,0
+      L 46,0  Q 43,10 35,21
+               Q 27,10 24,0
+      Z
+    " fill="url(#onesie-grad)" stroke="#F5B0A2" stroke-width="0.5"/>
+
+    <!-- Shoulder seam hint -->
+    <line x1="5" y1="44" x2="65" y2="44" stroke="#F5AEA0" stroke-width="0.75" opacity="0.45"/>
+
+    <!-- Heart -->
+    <path d="
+      M 35,74
+      C 26,68 15,60 20,54
+      C 23,48 30,48 35,54
+      C 40,48 47,48 50,54
+      C 55,60 44,68 35,74 Z
+    " fill="#E45252"/>
+    <!-- Heart highlight -->
+    <circle cx="28" cy="55" r="2.2" fill="white" opacity="0.20"/>
+
+    <!-- Snap buttons -->
+    <circle cx="27" cy="90" r="2.3" fill="white" opacity="0.60"/>
+    <circle cx="35" cy="90" r="2.3" fill="white" opacity="0.60"/>
+    <circle cx="43" cy="90" r="2.3" fill="white" opacity="0.60"/>
+
+  </g>
+
+  <!-- ── "Baby kawaii" ── -->
+  <text x="150" y="131" text-anchor="middle"
+        font-family="'Fredoka One', 'Nunito ExtraBold', 'Comic Sans MS', cursive"
+        font-size="46">
+    <tspan fill="#6ECDD4">Baby </tspan><tspan fill="#F07878">kawaii</tspan>
+  </text>
+
+  <!-- ── "- Baby clothes -" ── -->
+  <text x="150" y="152" text-anchor="middle"
+        font-family="'Sarabun', Arial, sans-serif"
+        font-size="12" fill="#B8B8B8" letter-spacing="2.5">
+    - Baby clothes -
+  </text>
+
+</svg>

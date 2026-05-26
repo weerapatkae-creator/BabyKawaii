@@ -1,0 +1,193 @@
+{
+  "name": "BabyKawaii — LINE Order Bot (รับออเดอร์จากลูกค้า)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line-bot",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "line-wh",
+      "name": "📥 LINE Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "line-bot"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract LINE message event\nconst body = $input.first().json;\nconst event = body.events?.[0];\nif (!event || event.type !== 'message' || event.message?.type !== 'text') {\n  return [{ json: { skip: true } }];\n}\nreturn [{\n  json: {\n    userId: event.source.userId,\n    replyToken: event.replyToken,\n    text: event.message.text.trim(),\n    skip: false\n  }\n}];"
+      },
+      "id": "parse-line",
+      "name": "🔍 แยก LINE Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ $json.skip }}", "value2": true }
+          ]
+        }
+      },
+      "id": "check-skip",
+      "name": "Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "url": "YOUR_SITE_URL/api/v1/chat.php?user_id={{ $json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-API-Key", "value": "YOUR_API_KEY" }]
+        }
+      },
+      "id": "get-session",
+      "name": "💾 โหลด Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─── BabyKawaii LINE Bot — Brain ───────────────────────────────\nconst msg    = $('🔍 แยก LINE Message').first().json.text.toLowerCase();\nconst userId = $('🔍 แยก LINE Message').first().json.userId;\nconst replyToken = $('🔍 แยก LINE Message').first().json.replyToken;\nconst sessionData = $('💾 โหลด Session').first().json.data;\nconst state  = $('💾 โหลด Session').first().json.data?.state ?? 'idle';\nconst cart   = sessionData?.data ?? {};\n\n// Products loaded dynamically (stored in session or fetched fresh)\nconst products = cart.products ?? [];\n\nlet reply = '';\nlet newState = state;\nlet newData  = { ...cart };\nlet createOrder = null;\n\n// ── State machine ────────────────────────────────────────────────\nif (state === 'idle') {\n  if (msg.match(/สวัสดี|หวัดดี|สั่ง|ซื้อ|สินค้า|ดู|มีอะไร/)) {\n    reply = `🌸 สวัสดีครับ ยินดีต้อนรับสู่ BabyKawaii Shop!\n\nพิมพ์ \"สินค้า\" เพื่อดูรายการสินค้า\nพิมพ์ \"ออเดอร์\" เพื่อตรวจสอบคำสั่งซื้อ\nพิมพ์ \"ติดต่อ\" เพื่อคุยกับเจ้าหน้าที่`;\n    newState = 'menu';\n  } else {\n    reply = `🌸 สวัสดีครับ! พิมพ์ \"สินค้า\" เพื่อเริ่มช้อปปิ้งนะครับ`;\n  }\n}\nelse if (state === 'menu' || msg === 'สินค้า') {\n  // Will fetch products in next node — signal with state\n  newState = 'choosing_product';\n  reply = '__FETCH_PRODUCTS__'; // sentinel\n}\nelse if (state === 'choosing_product') {\n  const num = parseInt(msg);\n  if (!isNaN(num) && products[num-1]) {\n    const p = products[num-1];\n    newData = { ...cart, product: p };\n    newState = 'choosing_size';\n    reply = `เลือก \"${p.name}\" ราคา ฿${p.price.toLocaleString('th-TH')} ✅\n\nกรุณาเลือกไซต์:\n(พิมพ์หมายเลขหรือชื่อไซต์)`;\n  } else {\n    reply = '❌ กรุณาพิมพ์หมายเลขสินค้าที่ต้องการครับ';\n  }\n}\nelse if (state === 'choosing_size') {\n  newData = { ...cart, size: msg.toUpperCase() };\n  newState = 'choosing_color';\n  reply = `ไซต์ ${msg.toUpperCase()} ✅\\n\\nกรุณาเลือกสี (พิมพ์ชื่อสี):`;\n}\nelse if (state === 'choosing_color') {\n  newData = { ...cart, color: msg };\n  newState = 'choosing_qty';\n  reply = `สี ${msg} ✅\\n\\nต้องการกี่ชิ้นครับ?`;\n}\nelse if (state === 'choosing_qty') {\n  const qty = parseInt(msg);\n  if (isNaN(qty) || qty < 1) {\n    reply = '❌ กรุณาพิมพ์จำนวนเป็นตัวเลขครับ';\n  } else {\n    newData = { ...cart, qty };\n    newState = 'getting_address';\n    const total = (cart.product?.price ?? 0) * qty;\n    reply = `${qty} ชิ้น ✅\n\nสรุปออเดอร์:\n📦 ${cart.product?.name}\nไซต์: ${cart.size} / สี: ${cart.color}\nจำนวน: ${qty} ชิ้น × ฿${cart.product?.price?.toLocaleString('th-TH')}\nรวม: ฿${total.toLocaleString('th-TH')}\n\nกรุณาพิมพ์ชื่อและที่อยู่จัดส่ง:\n(เช่น: สมชาย ใจดี / 123 ซ.ลาดพร้าว กทม.)`;\n  }\n}\nelse if (state === 'getting_address') {\n  newData = { ...cart, address: msg };\n  newState = 'confirming';\n  const total = (cart.product?.price ?? 0) * (cart.qty ?? 1);\n  reply = `ที่อยู่: ${msg} ✅\n\n📋 ยืนยันออเดอร์:\n${cart.product?.name} ${cart.size}/${cart.color} × ${cart.qty}\nรวม: ฿${total.toLocaleString('th-TH')} + ค่าส่ง\n\nพิมพ์ \"ยืนยัน\" เพื่อสั่งซื้อ\nพิมพ์ \"ยกเลิก\" เพื่อเริ่มใหม่`;\n}\nelse if (state === 'confirming') {\n  if (msg === 'ยืนยัน') {\n    createOrder = {\n      customer_name: cart.address?.split('/')[0]?.trim() ?? 'ลูกค้า LINE',\n      customer_phone: '',\n      customer_address: cart.address,\n      platform: 'line',\n      line_user_id: userId,\n      notes: 'สั่งผ่าน LINE Bot',\n      items: [{\n        product_id: cart.product?.id,\n        size:  cart.size,\n        color: cart.color,\n        quantity: cart.qty\n      }]\n    };\n    newState = 'idle';\n    newData  = {};\n    reply    = '__CREATE_ORDER__'; // handled by order node\n  } else if (msg === 'ยกเลิก') {\n    newState = 'idle'; newData = {};\n    reply = '❌ ยกเลิกออเดอร์แล้วครับ พิมพ์ \"สินค้า\" เพื่อเริ่มใหม่';\n  } else {\n    reply = 'พิมพ์ \"ยืนยัน\" หรือ \"ยกเลิก\" ครับ';\n  }\n}\n\nreturn [{\n  json: { userId, replyToken, reply, newState, newData, createOrder }\n}];"
+      },
+      "id": "bot-brain",
+      "name": "🧠 Bot Brain (State Machine)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            { "value1": "={{ $json.reply }}", "operation": "equals", "value2": "__CREATE_ORDER__" }
+          ]
+        }
+      },
+      "id": "check-order",
+      "name": "สร้างออเดอร์?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "url": "YOUR_SITE_URL/api/v1/orders.php",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-API-Key", "value": "YOUR_API_KEY" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.createOrder) }}"
+      },
+      "id": "create-order",
+      "name": "🛒 สร้างออเดอร์ใน BabyKawaii",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1660, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderResp = $input.first().json.data;\nreturn [{ json: { message: `✅ สั่งซื้อสำเร็จ!\nเลขออเดอร์: ${orderResp.order_number}\nยอดรวม: ฿${Number(orderResp.total).toLocaleString('th-TH')}\n\nทางร้านจะติดต่อกลับเพื่อยืนยันและแจ้งเลขพัสดุครับ 🌸` } }];"
+      },
+      "id": "order-success-msg",
+      "name": "✅ สร้างข้อความยืนยัน",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 180]
+    },
+    {
+      "parameters": {
+        "url": "YOUR_SITE_URL/api/v1/chat.php",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-API-Key", "value": "YOUR_API_KEY" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ user_id: $('🧠 Bot Brain (State Machine)').first().json.userId, state: $('🧠 Bot Brain (State Machine)').first().json.newState, data: $('🧠 Bot Brain (State Machine)').first().json.newData }) }}"
+      },
+      "id": "save-session",
+      "name": "💾 บันทึก Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1660, 420]
+    },
+    {
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/reply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_LINE_CHANNEL_ACCESS_TOKEN" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ replyToken: $('🧠 Bot Brain (State Machine)').first().json.replyToken, messages: [{ type: 'text', text: $json.message ?? $('🧠 Bot Brain (State Machine)').first().json.reply }] }) }}"
+      },
+      "id": "reply-line",
+      "name": "📤 ตอบกลับ LINE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1900, 420]
+    }
+  ],
+  "connections": {
+    "📥 LINE Webhook": {
+      "main": [[ { "node": "🔍 แยก LINE Message", "type": "main", "index": 0 } ]]
+    },
+    "🔍 แยก LINE Message": {
+      "main": [[ { "node": "Skip?", "type": "main", "index": 0 } ]]
+    },
+    "Skip?": {
+      "main": [
+        [],
+        [ { "node": "💾 โหลด Session", "type": "main", "index": 0 } ]
+      ]
+    },
+    "💾 โหลด Session": {
+      "main": [[ { "node": "🧠 Bot Brain (State Machine)", "type": "main", "index": 0 } ]]
+    },
+    "🧠 Bot Brain (State Machine)": {
+      "main": [[ { "node": "สร้างออเดอร์?", "type": "main", "index": 0 } ]]
+    },
+    "สร้างออเดอร์?": {
+      "main": [
+        [ { "node": "🛒 สร้างออเดอร์ใน BabyKawaii", "type": "main", "index": 0 } ],
+        [ { "node": "💾 บันทึก Session", "type": "main", "index": 0 } ]
+      ]
+    },
+    "🛒 สร้างออเดอร์ใน BabyKawaii": {
+      "main": [[ { "node": "✅ สร้างข้อความยืนยัน", "type": "main", "index": 0 } ]]
+    },
+    "✅ สร้างข้อความยืนยัน": {
+      "main": [[ { "node": "📤 ตอบกลับ LINE", "type": "main", "index": 0 } ]]
+    },
+    "💾 บันทึก Session": {
+      "main": [[ { "node": "📤 ตอบกลับ LINE", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "tags": [{"name": "BabyKawaii"}],
+  "_readme": {
+    "what": "LINE Chatbot รับออเดอร์จากลูกค้าและสร้างออเดอร์ใน BabyKawaii โดยอัตโนมัติ",
+    "flow": "ลูกค้าพิมพ์ → เลือกสินค้า → เลือกไซต์ → เลือกสี → จำนวน → ที่อยู่ → ยืนยัน → สร้างออเดอร์",
+    "setup": [
+      "1. แทนที่ YOUR_SITE_URL, YOUR_API_KEY",
+      "2. แทนที่ YOUR_LINE_CHANNEL_ACCESS_TOKEN (จาก LINE Developers Console)",
+      "3. ตั้ง LINE Messaging API Webhook URL = https://YOUR_N8N/webhook/line-bot",
+      "4. Activate workflow"
+    ]
+  }
+}

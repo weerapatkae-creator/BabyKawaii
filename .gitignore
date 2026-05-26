@@ -1,0 +1,26 @@
+# ─── Credentials & Local Config ──────────────────────
+config/local.php
+
+# ─── Uploads (ไฟล์ที่ user อัปโหลด) ────────────────
+uploads/
+assets/uploads/products/
+assets/uploads/media/
+
+# ─── Claude local settings (มี path เฉพาะเครื่อง) ──
+.claude/settings.local.json
+
+# ─── System / IDE ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+*.bak
+*.swp
+*.swo
+
+# ─── PHP / Composer ───────────────────────────────────
+vendor/
+composer.lock
+
+# ─── Node (ถ้ามีในอนาคต) ─────────────────────────────
+node_modules/
+npm-debug.log*
