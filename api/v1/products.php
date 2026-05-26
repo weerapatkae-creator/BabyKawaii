@@ -52,7 +52,7 @@ if ($type) { $where[] = "p.product_type = ?"; $params[] = $type; }
 $whereSQL = 'WHERE ' . implode(' AND ', $where);
 
 $stmt = $pdo->prepare("
-    SELECT p.id, p.name, p.sku, p.product_type, p.selling_price, p.cost_price,
+    SELECT p.id, p.name, p.sku, p.product_type, p.selling_price,
            p.description, p.main_image,
            cat.name as cat_name, cat.icon as cat_icon,
            COALESCE(SUM(s.quantity),0) as total_stock
@@ -64,7 +64,11 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $products = $stmt->fetchAll();
 
-// For the LINE bot: build a simple numbered list
+// cost_price ไม่ส่งออกไปใน list response เด็ดขาด
+foreach ($products as &$p) { unset($p['cost_price']); }
+unset($p);
+
+// numbered menu for bot
 $menu = [];
 foreach ($products as $i => $p) {
     $menu[] = [

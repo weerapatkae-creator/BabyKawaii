@@ -1,0 +1,324 @@
+{
+  "name": "BabyKawaii — FB/IG Chatbot (Gemini 1.5 Flash)",
+  "notes": "รับ DM จาก Facebook Page และ Instagram → ตอบด้วย Gemini 1.5 Flash → เช็คสต็อก real-time → รับออเดอร์ → escalate ถึง admin ผ่าน LINE\n\nตัวแปรที่ต้องกรอก (n8n Credentials):\n- GEMINI_API_KEY     : Google AI Studio → https://aistudio.google.com/apikey\n- META_PAGE_TOKEN   : Facebook App → Page Access Token\n- META_VERIFY_TOKEN : ตั้งเองใด ๆ ก็ได้ (ใช้ verify webhook)\n- BABYKAWAII_URL    : https://yourdomain.com\n- BABYKAWAII_KEY    : Admin → เชื่อมต่อระบบ → API Key\n- LINE_TOKEN        : LINE Channel Access Token\n- LINE_ADMIN_ID     : LINE Admin User ID",
+
+  "nodes": [
+
+    {
+      "id": "webhook-meta",
+      "name": "📥 Meta Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 300],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "meta-bot",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "webhookId": "meta-bot"
+    },
+
+    {
+      "id": "webhook-meta-post",
+      "name": "📥 Meta Webhook (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 500],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meta-bot",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "webhookId": "meta-bot"
+    },
+
+    {
+      "id": "verify-webhook",
+      "name": "✅ Verify Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [340, 300],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}"
+      }
+    },
+
+    {
+      "id": "parse-meta",
+      "name": "🔍 Parse Meta Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 500],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || !body.entry) return [{ json: { skip: true } }];\n\nconst results = [];\nfor (const entry of body.entry) {\n  for (const msg of (entry.messaging || [])) {\n    if (!msg.message) continue;\n    const isImage = msg.message.attachments?.some(a => a.type === 'image');\n    results.push({\n      json: {\n        skip: false,\n        sender_id: msg.sender.id,\n        platform: body.object === 'instagram' ? 'instagram' : 'facebook',\n        is_image: isImage || false,\n        text: msg.message.text || '',\n        image_url: isImage ? msg.message.attachments[0].payload.url : null,\n        timestamp: msg.timestamp\n      }\n    });\n  }\n}\nreturn results.length ? results : [{ json: { skip: true } }];"
+      }
+    },
+
+    {
+      "id": "check-skip",
+      "name": "Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [580, 500],
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.skip }}", "value2": true }]
+        }
+      }
+    },
+
+    {
+      "id": "check-image",
+      "name": "รูปภาพหรือข้อความ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [820, 400],
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.is_image }}", "value2": true }]
+        }
+      }
+    },
+
+    {
+      "id": "get-catalog",
+      "name": "📦 ดึง Catalog สินค้า",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 300],
+      "parameters": {
+        "url": "={{ $vars.BABYKAWAII_URL }}/api/v1/bot-catalog.php",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-API-Key", "value": "={{ $vars.BABYKAWAII_KEY }}" }]
+        }
+      }
+    },
+
+    {
+      "id": "download-image",
+      "name": "⬇️ ดาวน์โหลดรูป",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 500],
+      "parameters": {
+        "url": "={{ $('รูปภาพหรือข้อความ?').item.json.image_url }}",
+        "responseFormat": "file"
+      }
+    },
+
+    {
+      "id": "gemini-vision",
+      "name": "🔮 Gemini Vision — วิเคราะห์รูปสินค้า",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 500],
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $vars.GEMINI_API_KEY }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [{ \"text\": \"คุณช่วยระบุว่ารูปภาพที่ลูกค้าส่งมาตรงกับสินค้าในรายการใดมากที่สุด ตอบเป็น JSON: {\\\"matched_sku\\\": \\\"BK-001\\\", \\\"matched_name\\\": \\\"ชื่อสินค้า\\\", \\\"confidence\\\": \\\"high/medium/low\\\", \\\"reason\\\": \\\"เหตุผลสั้นๆ\\\"}\\nรายการสินค้า:\\n{{ $('📦 ดึง Catalog สินค้า').item.json.data.prompt_text }}\" }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [\n      { \"text\": \"สินค้าในรูปนี้คืออะไร?\" },\n      { \"inlineData\": { \"mimeType\": \"image/jpeg\", \"data\": \"{{ $binary.data.toString('base64') }}\" } }\n    ]\n  }]\n}"
+      }
+    },
+
+    {
+      "id": "parse-vision",
+      "name": "🔍 Parse ผลวิเคราะห์รูป",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 500],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nlet result = {};\ntry {\n  const jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);\n  result = jsonMatch ? JSON.parse(jsonMatch[0]) : {};\n} catch(e) { result = { confidence: 'low' }; }\n\nconst prev = $('Parse Meta Event').first().json;\nreturn [{ json: {\n  ...prev,\n  vision_result: result,\n  text: result.confidence === 'low'\n    ? '__LOW_CONFIDENCE__'\n    : `สนใจ ${result.matched_name}`,\n  matched_sku: result.matched_sku || ''\n}}];"
+      }
+    },
+
+    {
+      "id": "gemini-chat",
+      "name": "🤖 Gemini Chat — ตอบลูกค้า",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 300],
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $vars.GEMINI_API_KEY }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [{ \"text\": \"คุณชื่อ 'น้องกาวาอิ' เป็นผู้ช่วยขายของ BabyKawaii Shop ร้านเสื้อผ้าเด็กคุณภาพ ตอบภาษาไทยเสมอ น่ารัก กระชับ\\n\\nกฎเหล็ก:\\n1. แสดงเฉพาะ 'ราคาขาย' เท่านั้น ห้ามพูดถึงต้นทุนหรือกำไรเด็ดขาด\\n2. เช็คสต็อกจากข้อมูลด้านล่างก่อนตอบเสมอ\\n3. ถ้า qty=0 บอกว่า 'หมดแล้วค่ะ'\\n4. ถ้าลูกค้าพิมพ์ 'แอดมิน', 'ติดต่อคน', 'คุยกับคน' → ตอบแค่: __ESCALATE__\\n5. เมื่อลูกค้าต้องการสั่งซื้อ ให้ขอ: ชื่อ-นามสกุล / ที่อยู่จัดส่ง / เบอร์โทรศัพท์ / สินค้า+ไซต์+สี\\n6. เมื่อมีข้อมูลครบแล้ว ตอบ: __ORDER__:{\\\"name\\\":\\\"...\\\",\\\"phone\\\":\\\"...\\\",\\\"address\\\":\\\"...\\\",\\\"sku\\\":\\\"...\\\",\\\"size\\\":\\\"...\\\",\\\"color\\\":\\\"...\\\",\\\"qty\\\":1}\\n\\nรายการสินค้า + สต็อก (อัปเดตล่าสุด):\\n{{ $('📦 ดึง Catalog สินค้า').item.json.data.prompt_text }}\" }]\n  },\n  \"contents\": [{ \"role\": \"user\", \"parts\": [{ \"text\": \"{{ $json.text }}\" }] }]\n}"
+      }
+    },
+
+    {
+      "id": "parse-reply",
+      "name": "🔍 Parse คำตอบ Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || 'ขออภัยค่ะ ลองใหม่อีกครั้งนะคะ';\nconst meta = $('รูปภาพหรือข้อความ?').first().json;\n\nlet action = 'reply';\nlet orderData = null;\nlet replyText = raw;\n\nif (raw.trim() === '__ESCALATE__') {\n  action = 'escalate';\n  replyText = '🙏 กำลังโอนสายให้แอดมินเลยค่ะ รอสักครู่นะคะ 💕';\n} else if (raw.includes('__ORDER__:')) {\n  action = 'create_order';\n  try {\n    const jsonPart = raw.split('__ORDER__:')[1].trim();\n    orderData = JSON.parse(jsonPart);\n  } catch(e) { action = 'reply'; }\n  replyText = orderData\n    ? `✅ รับออเดอร์แล้วนะคะ!\\n📦 ${orderData.sku} ไซต์ ${orderData.size} สี ${orderData.color} × ${orderData.qty}\\nรอแอดมินยืนยันและแจ้งยอดรวมค่าส่งให้นะคะ 💕`\n    : raw;\n} else if (raw === '__LOW_CONFIDENCE__') {\n  replyText = 'ขอโทษนะคะ ขอรูปที่ชัดขึ้นได้มั้ยคะ? หรือพิมพ์ชื่อสินค้าที่ต้องการได้เลยค่ะ 📸';\n}\n\nreturn [{ json: {\n  sender_id: meta.sender_id,\n  platform: meta.platform,\n  action,\n  reply: replyText,\n  order_data: orderData\n}}];"
+      }
+    },
+
+    {
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1780, 300],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.action }}",
+        "rules": {
+          "rules": [
+            { "value2": "reply",        "output": 0 },
+            { "value2": "escalate",     "output": 1 },
+            { "value2": "create_order", "output": 2 }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": "send-meta-reply",
+      "name": "📤 ส่ง Reply ไป Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2020, 200],
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/me/messages?access_token={{ $vars.META_PAGE_TOKEN }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"recipient\": { \"id\": \"{{ $json.sender_id }}\" }, \"message\": { \"text\": \"{{ $json.reply }}\" } }"
+      }
+    },
+
+    {
+      "id": "escalate-line",
+      "name": "📲 LINE แจ้ง Admin (Escalate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2020, 400],
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/push",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.LINE_TOKEN }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $vars.LINE_ADMIN_ID }}\",\n  \"messages\": [{\n    \"type\": \"text\",\n    \"text\": \"🙋 ลูกค้าต้องการคุยกับแอดมิน!\\nPlatform: {{ $json.platform }}\\nSender ID: {{ $json.sender_id }}\\n\\nกรุณาเปิด {{ $json.platform === 'instagram' ? 'Instagram' : 'Facebook' }} แล้วตอบลูกค้าด้วยนะคะ 💕\"\n  }]\n}"
+      }
+    },
+
+    {
+      "id": "send-escalate-reply",
+      "name": "📤 ส่ง Reply Escalate ไป Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2260, 400],
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/me/messages?access_token={{ $vars.META_PAGE_TOKEN }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"recipient\": { \"id\": \"{{ $json.sender_id }}\" }, \"message\": { \"text\": \"{{ $json.reply }}\" } }"
+      }
+    },
+
+    {
+      "id": "create-order-api",
+      "name": "🛒 สร้างออเดอร์ใน BabyKawaii",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2020, 600],
+      "parameters": {
+        "url": "={{ $vars.BABYKAWAII_URL }}/api/v1/orders.php",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-API-Key", "value": "={{ $vars.BABYKAWAII_KEY }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"customer_name\":    \"{{ $json.order_data.name }}\",\n  \"customer_phone\":   \"{{ $json.order_data.phone }}\",\n  \"customer_address\": \"{{ $json.order_data.address }}\",\n  \"platform\":         \"{{ $json.platform }}\",\n  \"notes\":            \"สั่งผ่าน {{ $json.platform }} DM Bot\",\n  \"items\": [{\n    \"product_id\": {{ $json.order_data.product_id || 0 }},\n    \"size\":       \"{{ $json.order_data.size }}\",\n    \"color\":      \"{{ $json.order_data.color }}\",\n    \"quantity\":   {{ $json.order_data.qty || 1 }}\n  }]\n}"
+      }
+    },
+
+    {
+      "id": "send-order-reply",
+      "name": "📤 ส่ง Reply ออเดอร์ ไป Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2260, 600],
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/me/messages?access_token={{ $vars.META_PAGE_TOKEN }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": { \"id\": \"{{ $('🔍 Parse คำตอบ Gemini').item.json.sender_id }}\" },\n  \"message\":   { \"text\": \"{{ $('🔍 Parse คำตอบ Gemini').item.json.reply }}\" }\n}"
+      }
+    }
+
+  ],
+
+  "connections": {
+    "📥 Meta Webhook":             { "main": [[{ "node": "✅ Verify Webhook",          "type": "main", "index": 0 }]] },
+    "📥 Meta Webhook (POST)":      { "main": [[{ "node": "🔍 Parse Meta Event",        "type": "main", "index": 0 }]] },
+    "🔍 Parse Meta Event":         { "main": [[{ "node": "Skip?",                      "type": "main", "index": 0 }]] },
+    "Skip?": {
+      "main": [
+        [{ "node": "รูปภาพหรือข้อความ?", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "รูปภาพหรือข้อความ?": {
+      "main": [
+        [{ "node": "⬇️ ดาวน์โหลดรูป",        "type": "main", "index": 0 }],
+        [{ "node": "📦 ดึง Catalog สินค้า",   "type": "main", "index": 0 }]
+      ]
+    },
+    "📦 ดึง Catalog สินค้า":       { "main": [[{ "node": "🤖 Gemini Chat — ตอบลูกค้า", "type": "main", "index": 0 }]] },
+    "⬇️ ดาวน์โหลดรูป":            { "main": [[{ "node": "📦 ดึง Catalog สินค้า",       "type": "main", "index": 0 }]] },
+    "🤖 Gemini Chat — ตอบลูกค้า": { "main": [[{ "node": "🔍 Parse คำตอบ Gemini",     "type": "main", "index": 0 }]] },
+    "🔮 Gemini Vision — วิเคราะห์รูปสินค้า": { "main": [[{ "node": "🔍 Parse ผลวิเคราะห์รูป", "type": "main", "index": 0 }]] },
+    "🔍 Parse ผลวิเคราะห์รูป":    { "main": [[{ "node": "🤖 Gemini Chat — ตอบลูกค้า", "type": "main", "index": 0 }]] },
+    "🔍 Parse คำตอบ Gemini":       { "main": [[{ "node": "Route Action",               "type": "main", "index": 0 }]] },
+    "Route Action": {
+      "main": [
+        [{ "node": "📤 ส่ง Reply ไป Meta",           "type": "main", "index": 0 }],
+        [{ "node": "📲 LINE แจ้ง Admin (Escalate)",   "type": "main", "index": 0 }],
+        [{ "node": "🛒 สร้างออเดอร์ใน BabyKawaii",   "type": "main", "index": 0 }]
+      ]
+    },
+    "📲 LINE แจ้ง Admin (Escalate)": { "main": [[{ "node": "📤 ส่ง Reply Escalate ไป Meta", "type": "main", "index": 0 }]] },
+    "🛒 สร้างออเดอร์ใน BabyKawaii": { "main": [[{ "node": "📤 ส่ง Reply ออเดอร์ ไป Meta",  "type": "main", "index": 0 }]] }
+  }
+}
