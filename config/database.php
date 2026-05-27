@@ -1,6 +1,7 @@
 <?php
 // =====================================================
 // BabyKawaii Shop - Database Configuration
+date_default_timezone_set('Asia/Bangkok');
 // =====================================================
 // สำหรับ deploy จริง: คัดลอก config/local.example.php
 // ไปเป็น config/local.php แล้วแก้ค่าให้ตรงกับ server
@@ -34,6 +35,7 @@ function getDB() {
                 PDO::ATTR_EMULATE_PREPARES   => false,
             ];
             $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            $pdo->exec("SET time_zone='+07:00'");
         } catch (PDOException $e) {
             die('<div style="padding:20px;background:#fff0f0;border:1px solid #f00;border-radius:8px;font-family:sans-serif;">
                 <h3>❌ ไม่สามารถเชื่อมต่อฐานข้อมูล</h3>

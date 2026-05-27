@@ -144,11 +144,14 @@ $platform    = $platform->fetch();
 $platformStr = $platform ? "{$platform['icon']} {$platform['name']}" : 'ไม่ระบุ';
 $accountStr  = $platformAccountName ? " [{$platformAccountName}]" : '';
 
-$notifyMsg = "\n💬 ข้อความใหม่!\n"
-    . "จาก: {$customerName}\n"
-    . "แพลตฟอร์ม: {$platformStr}{$accountStr}\n"
-    . "ข้อความ: " . mb_substr($message, 0, 100) . (mb_strlen($message) > 100 ? '...' : '') . "\n"
-    . "→ ดูใน Inbox: " . SITE_URL . "/pages/inbox.php";
+$notifyMsg = "💬 ข้อความใหม่จากลูกค้า!\n"
+    . "👤 {$customerName}\n"
+    . "📲 {$platformStr}{$accountStr}\n"
+    . "─────────────────\n"
+    . mb_substr($message, 0, 100) . (mb_strlen($message) > 100 ? '…' : '') . "\n"
+    . "─────────────────\n"
+    . "⏰ " . date('d/m/Y H:i') . " น.\n"
+    . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
 
 sendLineNotify($notifyMsg);
 

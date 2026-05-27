@@ -28,8 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $orderRow = $orderRow->fetch();
     if ($orderRow) {
         if ($newStatus === 'shipped' && $tracking) {
-            // Notify LINE when order is shipped with tracking number
-            $lineMsg = "\n🚚 จัดส่งออเดอร์แล้ว!\n#{$orderRow['order_number']}\nลูกค้า: {$orderRow['customer_name']}\nเลขพัสดุ: $tracking\n\nดูออเดอร์: " . SITE_URL . "/pages/orders.php";
+            $lineMsg = "🚚 จัดส่งออเดอร์แล้ว!\n"
+                . "#{$orderRow['order_number']}\n"
+                . "👤 {$orderRow['customer_name']}\n"
+                . "📦 เลขพัสดุ: {$tracking}\n"
+                . "⏰ " . date('d/m/Y H:i') . " น.\n"
+                . "👉 " . SITE_URL . "/pages/orders.php?id={$orderId}";
             sendLineNotify($lineMsg);
         }
         triggerN8n('order_status_changed', [
@@ -91,7 +95,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
         'total'        => $total,
         'platform'     => 'admin',
     ]);
-    $lineMsg = "\n🛍️ ออเดอร์ใหม่!\n#{$orderNum}\nลูกค้า: {$customerName}\nยอด: ฿" . number_format($total, 2) . "\n\nดูออเดอร์: " . SITE_URL . "/pages/orders.php";
+    $lineMsg = "🛍️ ออเดอร์ใหม่!\n"
+        . "#{$orderNum}\n"
+        . "👤 {$customerName}\n"
+        . "💰 ฿" . number_format($total, 0) . "\n"
+        . "⏰ " . date('d/m/Y H:i') . " น.\n"
+        . "👉 " . SITE_URL . "/pages/orders.php?id={$newOrderId}";
     sendLineNotify($lineMsg);
 
     header('Location: ' . SITE_URL . '/pages/orders.php?msg=added');

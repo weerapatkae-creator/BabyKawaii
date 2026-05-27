@@ -168,7 +168,16 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
     ")->execute([$convId, $msgType, $text, $mediaUrl, $msgId ?: null]);
 
     // LINE notification
-    sendLineNotify("💬 ข้อความใหม่ [{$accountName}]\n{$text}");
+    $preview = mb_strlen($text) > 80 ? mb_substr($text, 0, 80) . '…' : $text;
+    $notifyMsg = "💬 ข้อความใหม่จากลูกค้า!\n"
+        . "👤 " . ($senderName ?: 'ไม่ระบุ') . "\n"
+        . "📲 [{$accountName}]\n"
+        . "─────────────────\n"
+        . "{$preview}\n"
+        . "─────────────────\n"
+        . "⏰ " . date('d/m/Y H:i') . " น.\n"
+        . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
+    sendLineNotify($notifyMsg);
 }
 
 // ── fetchFbProfile() และ sendFbMessage() อยู่ใน includes/meta-api.php ──
