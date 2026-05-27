@@ -77,8 +77,8 @@ if (empty($payload)) {
 $eventType = (int)($payload['type'] ?? 0);
 $data      = $payload['data']       ?? [];
 
-// ── Event: IM_MESSAGE (type 7) ───────────────────────────────────
-if ($eventType === 7) {
+// ── Event: IM_MESSAGE (type 7 = legacy, type 14 = New message, type 13 = New conversation)
+if (in_array($eventType, [7, 13, 14])) {
     // TikTok Shop ส่ง buyer_uid + conversation_id
     $senderId    = (string)($data['buyer_uid']       ?? ($data['from_user_id'] ?? ''));
     $senderName  = $data['buyer_nickname']            ?? ($data['from_user_name'] ?? 'ลูกค้า TikTok');
