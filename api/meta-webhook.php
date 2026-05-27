@@ -11,6 +11,7 @@
  *   babykawaii_verify_2026
  */
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/meta-api.php';
 
 define('META_VERIFY_TOKEN', 'babykawaii_verify_2026');
 
@@ -93,7 +94,10 @@ foreach ($entries as $entry) {
 
         if (empty($text)) continue;
 
-        saveMessage($pdo, $platformId, $platformAccountId, $platformAccountName, $senderId, null, null, $text, $msgType, $mediaUrl, $msgId);
+        // ดึงชื่อ + รูปโปรไฟล์จาก Facebook Graph API
+        [$senderName, $senderAvatar] = fetchFbProfile($senderId, $acc['page_access_token']);
+
+        saveMessage($pdo, $platformId, $platformAccountId, $platformAccountName, $senderId, $senderName, $senderAvatar, $text, $msgType, $mediaUrl, $msgId);
         $saved++;
     }
 
@@ -119,7 +123,9 @@ foreach ($entries as $entry) {
 
         if (empty($text)) continue;
 
-        saveMessage($pdo, $platformId, $platformAccountId, $platformAccountName, $senderId, null, null, $text, $msgType, $mediaUrl, $msgId);
+        [$senderName, $senderAvatar] = fetchFbProfile($senderId, $acc['page_access_token']);
+
+        saveMessage($pdo, $platformId, $platformAccountId, $platformAccountName, $senderId, $senderName, $senderAvatar, $text, $msgType, $mediaUrl, $msgId);
         $saved++;
     }
 }
@@ -164,3 +170,5 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
     // LINE notification
     sendLineNotify("💬 ข้อความใหม่ [{$accountName}]\n{$text}");
 }
+
+// ── fetchFbProfile() และ sendFbMessage() อยู่ใน includes/meta-api.php ──

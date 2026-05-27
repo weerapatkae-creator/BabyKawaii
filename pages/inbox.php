@@ -21,21 +21,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         $pdo->prepare("UPDATE conversations SET last_message=?,last_message_at=NOW(),status='open',updated_at=NOW() WHERE id=?")
             ->execute([$content, $convId]);
 
-        $conv = $pdo->prepare("SELECT c.*, p.name as platform_name FROM conversations c LEFT JOIN platforms p ON p.id=c.platform_id WHERE c.id=?");
+        $conv = $pdo->prepare("
+            SELECT c.*, p.name as platform_name, p.slug as platform_slug,
+                   pa.page_access_token, pa.account_uid as page_id
+            FROM conversations c
+            LEFT JOIN platforms p ON p.id=c.platform_id
+            LEFT JOIN platform_accounts pa ON pa.id=c.platform_account_id
+            WHERE c.id=?
+        ");
         $conv->execute([$convId]);
         $conv = $conv->fetch();
 
+        $sent = false;
         if ($conv) {
-            triggerN8n('inbox_reply', [
-                'conversation_id' => $convId,
-                'platform'        => $conv['platform_name'] ?? '',
-                'customer_uid'    => $conv['customer_uid'],
-                'customer_name'   => $conv['customer_name'],
-                'message'         => $content,
-            ]);
+            $slug = $conv['platform_slug'] ?? '';
+
+            // ── ส่งผ่าน Facebook / Instagram Send API โดยตรง ──
+            if (in_array($slug, ['facebook','instagram']) && $conv['page_access_token']) {
+                require_once __DIR__ . '/../includes/meta-api.php';
+                $sent = sendFbMessage($conv['customer_uid'], $content, $conv['page_access_token']);
+            }
+
+            // ── trigger n8n (สำหรับแพลตฟอร์มอื่น หรือ fallback) ──
+            if (!$sent) {
+                triggerN8n('inbox_reply', [
+                    'conversation_id' => $convId,
+                    'platform'        => $conv['platform_name'] ?? '',
+                    'customer_uid'    => $conv['customer_uid'],
+                    'customer_name'   => $conv['customer_name'],
+                    'message'         => $content,
+                ]);
+            }
         }
 
-        echo json_encode(['ok'=>true, 'msg_id'=>$msgId, 'sent_at'=>date('H:i')]);
+        echo json_encode(['ok'=>true, 'msg_id'=>$msgId, 'sent_at'=>date('H:i'), 'sent_via'=>$sent?'facebook_api':'n8n']);
         exit;
     }
 
