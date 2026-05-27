@@ -245,16 +245,17 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
                         <div class="form-text" id="hintToken"></div>
                     </div>
                     <div class="col-md-6" id="rowSecret">
-                        <label class="form-label fw-semibold">App Secret <span class="text-muted">(Meta only)</span></label>
+                        <label class="form-label fw-semibold" id="lSecret">App Secret</label>
                         <div class="input-group">
-                            <input type="password" id="fSecret" class="form-control font-monospace" placeholder="App Secret สำหรับ verify webhook signature">
+                            <input type="password" id="fSecret" class="form-control font-monospace" placeholder="App Secret">
                             <button class="btn btn-outline-secondary" type="button" onclick="togglePass('fSecret',this)">👁</button>
                         </div>
+                        <div class="form-text" id="hintSecret"></div>
                     </div>
                     <div class="col-md-6" id="rowVerify">
-                        <label class="form-label fw-semibold">Webhook Verify Token <span class="text-muted">(Meta only)</span></label>
-                        <input type="text" id="fVerify" class="form-control font-monospace" placeholder="ตั้งเองได้ เช่น babykawaii_verify_2024">
-                        <div class="form-text">ใช้ตั้งค่าใน Meta Webhook → Verify Token</div>
+                        <label class="form-label fw-semibold" id="lVerify">App Key / Verify Token</label>
+                        <input type="text" id="fVerify" class="form-control font-monospace" placeholder="">
+                        <div class="form-text" id="hintVerify"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">สถานะ</label>
@@ -297,38 +298,66 @@ const API_KEY  = '<?= $apiKey ?>';
 
 const PLATFORM_HINTS = {
     facebook: {
-        uid:   'Facebook Page ID (ดูได้ที่ About ของเพจ)',
-        token: 'Page Access Token จาก Meta for Developers → Graph API Explorer',
-        guide: `<strong>วิธีตั้ง Meta (Facebook/Instagram) Webhook:</strong><br>
-                1. ไปที่ <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a><br>
-                2. สร้าง/เปิด App → Add Product: Messenger<br>
-                3. Settings → Webhooks → ใส่ Webhook URL และ Verify Token<br>
-                4. Subscribe: messages, messaging_postbacks<br>
-                5. สร้าง Page Access Token ที่ Messenger → Settings → Access Token`
+        uid:         'Facebook Page ID (ดูได้ที่ About ของเพจ หรือ Graph API)',
+        token:       'Page Access Token จาก Meta for Developers → Graph API Explorer',
+        secret:      'App Secret จาก Meta App Dashboard → Settings → Basic',
+        verify:      'ตั้งเองได้ เช่น babykawaii2025 — ใช้กรอกใน Meta Webhook → Verify Token',
+        lSecret:     'App Secret (Meta)',
+        lVerify:     'Webhook Verify Token (Meta)',
+        showSecret:  true,
+        showVerify:  true,
+        webhookPath: '/api/meta-webhook.php',
+        guide: `<strong>📘 วิธีตั้ง Facebook Messenger Webhook:</strong><br>
+                1. ไปที่ <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> → เปิด App<br>
+                2. Add Product: <strong>Messenger</strong> → Settings<br>
+                3. Webhooks → ใส่ Webhook URL + Verify Token แล้วกด Verify<br>
+                4. Subscribe fields: <code>messages</code>, <code>messaging_postbacks</code><br>
+                5. Access Tokens → Generate Page Access Token สำหรับเพจนั้น`
     },
     instagram: {
-        uid:   'Instagram Account ID (ดูจาก Meta Business Suite)',
-        token: 'Instagram Page Access Token (ต้องเชื่อมกับ Facebook Page ก่อน)',
-        guide: `<strong>วิธีตั้ง Instagram Webhook:</strong><br>
-                1. เชื่อม Instagram Professional Account กับ Facebook Page<br>
+        uid:         'Instagram Account ID (ดูจาก Meta Business Suite → Settings)',
+        token:       'Page Access Token (ต้องเชื่อมกับ Facebook Page ก่อน)',
+        secret:      'App Secret เดียวกับ Facebook App',
+        verify:      'Verify Token เดียวกับที่ตั้งใน Meta Webhook',
+        lSecret:     'App Secret (Meta)',
+        lVerify:     'Webhook Verify Token (Meta)',
+        showSecret:  true,
+        showVerify:  true,
+        webhookPath: '/api/meta-webhook.php',
+        guide: `<strong>📸 วิธีตั้ง Instagram DM Webhook:</strong><br>
+                1. เชื่อม Instagram Professional กับ Facebook Page ก่อน<br>
                 2. Meta App → Instagram → Webhooks → ใส่ Webhook URL<br>
-                3. Subscribe: messages<br>
-                4. ใช้ Page Access Token เดียวกับ Facebook Page ที่เชื่อมอยู่`
+                3. Subscribe: <code>messages</code><br>
+                4. ใช้ Page Access Token + App Secret เดียวกับ Facebook Page`
     },
     tiktok: {
-        uid:   'TikTok Shop ID (ดูจาก TikTok Seller Center)',
-        token: 'Access Token จาก TikTok Shop → App Management → Authorization',
-        guide: `<strong>วิธีตั้ง TikTok Shop Webhook:</strong><br>
+        uid:         'TikTok Shop ID (ดูจาก Seller Center → My Account → Shop ID)',
+        token:       'Access Token จาก TikTok Shop Partner Portal → App → Auth Token',
+        secret:      'App Secret จาก TikTok Partner Portal → My Apps → App Credentials',
+        verify:      'App Key จาก TikTok Partner Portal → My Apps → App Credentials',
+        lSecret:     'App Secret (TikTok)',
+        lVerify:     'App Key (TikTok)',
+        showSecret:  true,
+        showVerify:  true,
+        webhookPath: '/api/tiktok-webhook.php',
+        guide: `<strong>🎵 วิธีตั้ง TikTok Shop Webhook:</strong><br>
                 1. ไปที่ <a href="https://partner.tiktokshop.com" target="_blank">partner.tiktokshop.com</a><br>
-                2. My Apps → สร้าง App หรือใช้ App ที่มีอยู่<br>
-                3. Event Settings → Webhooks → ใส่ Webhook URL<br>
-                4. Subscribe: ORDER_STATUS_CHANGE<br>
-                5. นำ Access Token ที่ได้มากรอก`
+                2. <strong>My Apps</strong> → เลือก App → <strong>Event Settings</strong> → Webhooks<br>
+                3. ใส่ Webhook URL แล้วกด Verify (ระบบจะส่ง GET challenge มา)<br>
+                4. Subscribe events: <code>IM_MESSAGE</code>, <code>ORDER_STATUS_CHANGE</code><br>
+                5. คัดลอก <strong>App Key</strong> + <strong>App Secret</strong> + <strong>Access Token</strong> มากรอก`
     },
     walkin: {
-        uid:   'ไม่จำเป็น',
-        token: 'ไม่จำเป็น',
-        guide: `<strong>หน้าร้าน / Walk-in:</strong><br>กรอกชื่อร้านและสีแสดงผลเท่านั้น ไม่ต้องใส่ Token`
+        uid:         'ไม่จำเป็น',
+        token:       'ไม่จำเป็น',
+        secret:      '',
+        verify:      '',
+        lSecret:     'App Secret',
+        lVerify:     'Verify Token',
+        showSecret:  false,
+        showVerify:  false,
+        webhookPath: '',
+        guide: `<strong>🏪 หน้าร้าน / Walk-in:</strong><br>กรอกชื่อร้านและสีแสดงผลเท่านั้น ไม่ต้องใส่ Token`
     }
 };
 
@@ -338,22 +367,31 @@ function updatePlatformHint() {
     const col  = sel.selectedOptions[0]?.dataset.color || '#1877F2';
     const h    = PLATFORM_HINTS[slug] || PLATFORM_HINTS.facebook;
 
-    document.getElementById('hintUid').textContent   = h.uid;
-    document.getElementById('hintToken').innerHTML   = h.token;
-    document.getElementById('setupGuide').innerHTML  = h.guide;
-    document.getElementById('fColor').value          = col;
+    document.getElementById('hintUid').textContent        = h.uid;
+    document.getElementById('hintToken').innerHTML        = h.token;
+    document.getElementById('hintSecret').textContent     = h.secret || '';
+    document.getElementById('hintVerify').textContent     = h.verify || '';
+    document.getElementById('lSecret').textContent        = h.lSecret || 'App Secret';
+    document.getElementById('lVerify').textContent        = h.lVerify  || 'Verify Token';
+    document.getElementById('setupGuide').innerHTML       = h.guide;
+    document.getElementById('fColor').value               = col;
 
-    const isMeta = ['facebook','instagram'].includes(slug);
-    document.getElementById('rowSecret').style.display = isMeta ? '' : 'none';
-    document.getElementById('rowVerify').style.display = isMeta ? '' : 'none';
+    document.getElementById('rowSecret').style.display = h.showSecret ? '' : 'none';
+    document.getElementById('rowVerify').style.display = h.showVerify ? '' : 'none';
 
-    updateWebhookPreview();
+    updateWebhookPreview(slug);
 }
 
-function updateWebhookPreview() {
+function updateWebhookPreview(slug) {
     const id = document.getElementById('fId').value;
-    if (id) {
-        const url = `${SITE_URL}/api/inbox-webhook.php?account_id=${id}&api_key=${API_KEY}`;
+    if (!slug) {
+        const sel = document.getElementById('fPlatformId');
+        slug = sel.selectedOptions[0]?.dataset.slug || 'facebook';
+    }
+    const h = PLATFORM_HINTS[slug] || PLATFORM_HINTS.facebook;
+    if (id && h.webhookPath) {
+        const url = `${SITE_URL}${h.webhookPath}?account_id=${id}` +
+                    (slug !== 'tiktok' ? `&api_key=${API_KEY}` : '');
         document.getElementById('webhookPreviewUrl').textContent = url;
         document.getElementById('webhookPreview').style.display = '';
     } else {
