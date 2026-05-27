@@ -25,6 +25,40 @@ $monthLabel  = $thaiMonths[$month] . ' ' . ($year + 543);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
+    // ── Business Event: save ──────────────────────────────────────────────────
+    if ($action === 'save_biz') {
+        header('Content-Type: application/json');
+        $id       = (int)($_POST['id'] ?? 0);
+        $title    = trim($_POST['title']      ?? '');
+        $evType   = $_POST['event_type']      ?? 'other';
+        $startAt  = trim($_POST['start_at']   ?? '');
+        $endAt    = trim($_POST['end_at']     ?? '') ?: null;
+        $amount   = $_POST['amount'] !== '' ? (float)$_POST['amount'] : null;
+        $notes    = trim($_POST['notes']      ?? '');
+        $color    = trim($_POST['color']      ?? '#E67E22');
+
+        if (!$title || !$startAt) { echo json_encode(['ok'=>false,'msg'=>'กรุณากรอกชื่อและวันเวลา']); exit; }
+
+        if ($id) {
+            $pdo->prepare("UPDATE business_events SET title=?,event_type=?,start_at=?,end_at=?,amount=?,notes=?,color=? WHERE id=?")
+                ->execute([$title,$evType,$startAt,$endAt,$amount,$notes,$color,$id]);
+        } else {
+            $pdo->prepare("INSERT INTO business_events (title,event_type,start_at,end_at,amount,notes,color,created_by) VALUES (?,?,?,?,?,?,?,?)")
+                ->execute([$title,$evType,$startAt,$endAt,$amount,$notes,$color,$_SESSION['admin_id']??null]);
+            $id = $pdo->lastInsertId();
+        }
+        echo json_encode(['ok'=>true,'id'=>$id]);
+        exit;
+    }
+
+    // ── Business Event: delete ────────────────────────────────────────────────
+    if ($action === 'delete_biz') {
+        header('Content-Type: application/json');
+        $pdo->prepare("DELETE FROM business_events WHERE id=?")->execute([(int)$_POST['id']]);
+        echo json_encode(['ok'=>true]);
+        exit;
+    }
+
     if ($action === 'save') {
         $id          = (int)($_POST['id'] ?? 0);
         $title       = trim($_POST['title'] ?? '');
@@ -127,6 +161,17 @@ foreach ($posts as $post) {
     $postsByDay[$day][] = $post;
 }
 
+// ── Business events (ซื้อสินค้า, ประชุม, ฯลฯ) ────────────────────────────────
+$bizEvents = $pdo->prepare("SELECT * FROM business_events WHERE start_at BETWEEN ? AND ? ORDER BY start_at ASC");
+$bizEvents->execute([$rangeStart, $rangeEnd]);
+$bizEvents = $bizEvents->fetchAll();
+
+$bizByDay = [];
+foreach ($bizEvents as $ev) {
+    $day = (int)date('j', strtotime($ev['start_at']));
+    $bizByDay[$day][] = $ev;
+}
+
 $platforms  = $pdo->query("SELECT * FROM platforms WHERE is_active=1 ORDER BY name")->fetchAll();
 $products   = $pdo->query("SELECT id,name FROM products WHERE status='active' ORDER BY name")->fetchAll();
 $promotions = $pdo->query("SELECT id,name FROM promotions WHERE status='active' ORDER BY name")->fetchAll();
@@ -219,6 +264,9 @@ $platformsJS = json_encode(array_values($platformMap), JSON_UNESCAPED_UNICODE);
                     <i class="fas fa-list"></i> รายการ
                 </button>
             </div>
+            <button class="btn btn-outline-warning" onclick="openBizModal()">
+                <i class="fas fa-calendar-plus me-1"></i> เพิ่ม Event งาน
+            </button>
             <button class="btn btn-primary" onclick="openAdd()">
                 <i class="fas fa-plus me-1"></i> เพิ่มโพสต์
             </button>
@@ -309,18 +357,35 @@ $platformsJS = json_encode(array_values($platformMap), JSON_UNESCAPED_UNICODE);
                     $isToday  = ($dateStr === $today);
                     $isSunday = ((($firstDow + $day - 1) % 7) === 0);
                     $isSat    = ((($firstDow + $day - 1) % 7) === 6);
-                    $dayPosts = $postsByDay[$day] ?? [];
+                    $dayPosts   = $postsByDay[$day] ?? [];
+                    $dayBizEvts = $bizByDay[$day]   ?? [];
                 ?>
                 <div class="cal-cell <?= $isToday?'cal-today':'' ?> <?= $isSunday?'cal-sun':($isSat?'cal-sat':'') ?>"
                      onclick="openAdd('<?= $dateStr ?>')" title="เพิ่มโพสต์ <?= $dateStr ?>">
                     <div class="cal-day-num <?= $isToday?'today-badge':'' ?>"><?= $day ?></div>
                     <div class="cal-events">
+
+                        <?php foreach ($dayBizEvts as $ev):
+                            $evColor  = $ev['color'] ?: '#E67E22';
+                            $evStart  = date('H:i', strtotime($ev['start_at']));
+                            $evEnd    = $ev['end_at'] ? '–'.date('H:i', strtotime($ev['end_at'])) : '';
+                            $evAmount = $ev['amount'] ? ' ฿'.number_format($ev['amount'],0) : '';
+                        ?>
+                        <div class="cal-event cal-biz-event"
+                             style="background:<?= $evColor ?>22;border-left:3px solid <?= $evColor ?>;"
+                             onclick="event.stopPropagation();showBizEvent(<?= htmlspecialchars(json_encode($ev),ENT_QUOTES) ?>)"
+                             title="<?= htmlspecialchars($ev['title']) ?><?= $evAmount ?>">
+                            <span class="cal-event-title" style="color:<?= $evColor ?>;font-weight:600;">
+                                <?= htmlspecialchars(mb_strimwidth($ev['title'],0,16,'…')) ?>
+                            </span>
+                            <span class="cal-event-time"><?= $evStart ?><?= $evEnd ?></span>
+                        </div>
+                        <?php endforeach; ?>
+
                         <?php foreach ($dayPosts as $post):
-                            // Pick first platform color
                             $pids    = array_filter(array_map('intval', explode(',', $post['platform_ids'] ?? '')));
                             $pfColor = !empty($pids) && isset($platformMap[reset($pids)])
                                        ? $platformMap[reset($pids)]['color'] : '#9B72CF';
-                            // Use post_type icon (fallback to content_type)
                             $ptIcon  = $postTypes[$post['post_type']][0]    ?? $ctypes[$post['content_type']][0] ?? '📝';
                             $pubSt   = $post['publish_status'] ?? $post['status'];
                             [$pubEmoji,$pubColor] = [$pubStatusCfg[$pubSt][0]??'⬜', $pubStatusCfg[$pubSt][1]??'#aaa'];
@@ -335,7 +400,8 @@ $platformsJS = json_encode(array_values($platformMap), JSON_UNESCAPED_UNICODE);
                             <span style="font-size:0.62rem;margin-left:1px;" title="<?= $pubStatusCfg[$pubSt][2]??'' ?>"><?= $pubEmoji ?></span>
                         </div>
                         <?php endforeach; ?>
-                        <?php if (count($dayPosts) === 0): ?>
+
+                        <?php if (count($dayPosts) === 0 && count($dayBizEvts) === 0): ?>
                         <div class="cal-add-hint">+ เพิ่ม</div>
                         <?php endif; ?>
                     </div>
@@ -465,6 +531,141 @@ $platformsJS = json_encode(array_values($platformMap), JSON_UNESCAPED_UNICODE);
 </div><!-- /container -->
 
 <!-- ═════════════════════════════════════════════════════════════════════════
+     ADD TYPE PICKER MODAL
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="addPickerModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:360px;">
+        <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+            <div class="modal-header border-0 pb-1" style="background:#f8f9fa;">
+                <div>
+                    <div class="fw-bold" id="addPickerDateLabel" style="font-size:.95rem;"></div>
+                    <div class="text-muted" style="font-size:.78rem;">เลือกประเภทที่ต้องการเพิ่ม</div>
+                </div>
+                <button type="button" class="btn-close" onclick="closePickerModal()"></button>
+            </div>
+            <div class="modal-body p-3 d-flex flex-column gap-2">
+                <button class="btn btn-lg w-100 text-start d-flex align-items-center gap-3"
+                        style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:12px;padding:14px 18px;"
+                        onclick="closePickerModal(); openAddPost()">
+                    <span style="font-size:1.5rem;">📝</span>
+                    <div>
+                        <div class="fw-bold" style="font-size:.92rem;">เพิ่มโพสต์ Content</div>
+                        <div style="font-size:.75rem;opacity:.85;">วางแผนโพสต์ FB / IG / TikTok</div>
+                    </div>
+                </button>
+                <button class="btn btn-lg w-100 text-start d-flex align-items-center gap-3"
+                        style="background:linear-gradient(135deg,#f093fb,#f5a623);color:#fff;border:none;border-radius:12px;padding:14px 18px;"
+                        onclick="closePickerModal(); openBizModal(null, _pickerDate)">
+                    <span style="font-size:1.5rem;">📋</span>
+                    <div>
+                        <div class="fw-bold" style="font-size:.92rem;">เพิ่ม Event งาน</div>
+                        <div style="font-size:.75rem;opacity:.85;">ซื้อสินค้า · นับสต็อก · ประชุม ฯลฯ</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════════════
+     BUSINESS EVENT MODAL
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="bizModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#FFF3E0,#FFF8E1);">
+                <h5 class="modal-title" id="bizModalTitle">📅 เพิ่ม Event งาน</h5>
+                <button type="button" class="btn-close" onclick="closeBizModal()"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="bId" value="0">
+                <div class="row g-3">
+
+                    <!-- ประเภท -->
+                    <div class="col-md-5">
+                        <label class="form-label fw-semibold">ประเภท Event</label>
+                        <select id="bType" class="form-select" onchange="bizTypeChanged()">
+                            <option value="purchase">🛒 ซื้อสินค้าเข้าสต็อก</option>
+                            <option value="stock_count">📋 นับสต็อก</option>
+                            <option value="delivery">🚚 รับของ / จัดส่ง</option>
+                            <option value="meeting">💬 ประชุม / นัดหมาย</option>
+                            <option value="task">✅ งานทั่วไป</option>
+                            <option value="promotion">🎉 โปรโมชั่น</option>
+                            <option value="other">📌 อื่นๆ</option>
+                        </select>
+                    </div>
+
+                    <!-- ชื่อ -->
+                    <div class="col-md-7">
+                        <label class="form-label fw-semibold">ชื่อ Event <span class="text-danger">*</span></label>
+                        <input type="text" id="bTitle" class="form-control" placeholder="เช่น ซื้อสินค้าตลาดโชคชัย 4">
+                    </div>
+
+                    <!-- วันเวลาเริ่ม -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">วันที่ & เวลาเริ่ม <span class="text-danger">*</span></label>
+                        <input type="datetime-local" id="bStart" class="form-control">
+                    </div>
+
+                    <!-- วันเวลาสิ้นสุด -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">วันที่ & เวลาสิ้นสุด</label>
+                        <input type="datetime-local" id="bEnd" class="form-control">
+                        <div class="form-text">เว้นว่างถ้าไม่ระบุเวลาสิ้นสุด</div>
+                    </div>
+
+                    <!-- มูลค่า (purchase/delivery) -->
+                    <div class="col-md-6" id="bAmountRow">
+                        <label class="form-label fw-semibold">มูลค่า / ต้นทุน (บาท)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">฿</span>
+                            <input type="number" id="bAmount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                        </div>
+                    </div>
+
+                    <!-- สี -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">สีแสดงผล</label>
+                        <div class="d-flex gap-2 align-items-center">
+                            <input type="color" id="bColor" class="form-control form-control-color" value="#E67E22" style="width:48px;height:36px;">
+                            <div class="d-flex gap-1 flex-wrap" id="bColorPresets">
+                                <?php foreach ([
+                                    '#E67E22'=>'ส้ม','#E74C3C'=>'แดง','#27AE60'=>'เขียว',
+                                    '#2980B9'=>'น้ำเงิน','#8E44AD'=>'ม่วง','#2C3E50'=>'เทา'
+                                ] as $c=>$lbl): ?>
+                                <div onclick="document.getElementById('bColor').value='<?= $c ?>'"
+                                     style="width:22px;height:22px;border-radius:50%;background:<?= $c ?>;cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px #ccc;"
+                                     title="<?= $lbl ?>"></div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- หมายเหตุ -->
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">หมายเหตุ / รายละเอียด</label>
+                        <textarea id="bNotes" class="form-control" rows="3"
+                                  placeholder="เช่น รายการสินค้าที่ซื้อ, ที่อยู่, ราคา..."></textarea>
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-outline-danger" id="bDeleteBtn" onclick="deleteBizEvent()" style="display:none;">
+                    <i class="fas fa-trash me-1"></i> ลบ Event
+                </button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" onclick="closeBizModal()">ยกเลิก</button>
+                    <button type="button" class="btn btn-warning" onclick="saveBizEvent()">
+                        <i class="fas fa-save me-1"></i> บันทึก
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════════════
      ADD / EDIT MODAL
 ══════════════════════════════════════════════════════════════════════════ -->
 <div class="modal fade" id="postModal" tabindex="-1">
@@ -507,12 +708,16 @@ $platformsJS = json_encode(array_values($platformMap), JSON_UNESCAPED_UNICODE);
 
                         <!-- Status + DateTime -->
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold">สถานะ</label>
-                            <select name="status" id="fStatus" class="form-select">
-                                <?php foreach ($statusCfg as $k => [$cl,$l]): ?>
-                                <option value="<?= $k ?>"><?= $l ?></option>
-                                <?php endforeach; ?>
+                            <label class="form-label fw-semibold">สถานะโพสต์
+                                <span data-bs-toggle="tooltip" title="สถานะบอกให้ระบบรู้ว่าจะทำอะไรกับโพสต์นี้" style="cursor:help;">ℹ️</span>
+                            </label>
+                            <select name="status" id="fStatus" class="form-select" onchange="updateStatusHint(this.value)">
+                                <option value="draft">📝 ร่าง — ยังไม่พร้อมโพสต์</option>
+                                <option value="scheduled">📅 กำหนดแล้ว — ให้ n8n โพสต์อัตโนมัติ</option>
+                                <option value="published">✅ เผยแพร่แล้ว — โพสต์ขึ้นแล้ว</option>
+                                <option value="cancelled">🚫 ยกเลิก — ไม่โพสต์</option>
                             </select>
+                            <div id="statusHint" class="form-text mt-1" style="font-size:.75rem;line-height:1.5;"></div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">วันเวลาโพสต์</label>
@@ -839,7 +1044,149 @@ function resetForm() {
     document.querySelectorAll('.pf-check').forEach(c => c.checked = false);
 }
 
+// ── Add Type Picker ───────────────────────────────────────────────────────────
+let _pickerDate = '';
+
+function showAddPicker(dateStr) {
+    _pickerDate = dateStr;
+    // Format Thai date label
+    const [y,m,d] = dateStr.split('-');
+    const thMonths = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    document.getElementById('addPickerDateLabel').textContent =
+        `📅 ${parseInt(d)} ${thMonths[parseInt(m)]} ${parseInt(y)+543}`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('addPickerModal')).show();
+}
+
+function closePickerModal() {
+    try { bootstrap.Modal.getInstance(document.getElementById('addPickerModal'))?.hide(); } catch(e) {}
+    setTimeout(() => {
+        const el = document.getElementById('addPickerModal');
+        el.classList.remove('show'); el.style.display = 'none';
+        el.setAttribute('aria-hidden','true'); el.removeAttribute('aria-modal');
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+        document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    }, 320);
+}
+
+// ── Status hint descriptions ──────────────────────────────────────────────────
+const STATUS_HINTS = {
+    draft:     '📝 <strong>ร่าง</strong> — บันทึกไว้ก่อน ยังไม่พร้อมโพสต์ n8n จะ<u>ไม่</u>ทำงาน ใช้ตอนยังคิด caption ไม่เสร็จหรือรอรูป',
+    scheduled: '📅 <strong>กำหนดแล้ว</strong> — ระบบจะส่ง trigger ให้ n8n ทันที n8n จะโพสต์ขึ้นแพลตฟอร์มตามเวลาที่ตั้งไว้ <span style="color:#E67E22;">⚠️ ต้องกรอกวันเวลาด้วย</span>',
+    published: '✅ <strong>เผยแพร่แล้ว</strong> — โพสต์ขึ้นแพลตฟอร์มไปแล้ว เปลี่ยนมาสถานะนี้เมื่อโพสต์เองมือหรือ n8n โพสต์สำเร็จ',
+    cancelled: '🚫 <strong>ยกเลิก</strong> — ตัดสินใจไม่โพสต์แล้ว เก็บไว้เป็นบันทึก n8n จะ<u>ไม่</u>ทำงาน',
+};
+function updateStatusHint(val) {
+    const el = document.getElementById('statusHint');
+    if (el) el.innerHTML = STATUS_HINTS[val] || '';
+}
+
+function openAddPost() {
+    resetForm();
+    document.getElementById('fScheduled').value = _pickerDate + 'T09:00';
+    getModal().show();
+}
+
+// ── Business Event Modal ──────────────────────────────────────────────────────
+const BIZ_COLOR_DEFAULTS = {
+    purchase:'#E67E22', stock_count:'#27AE60', delivery:'#2980B9',
+    meeting:'#8E44AD', task:'#2C3E50', promotion:'#E74C3C', other:'#95A5A6'
+};
+
+function closeBizModal() {
+    try { bootstrap.Modal.getInstance(document.getElementById('bizModal'))?.hide(); } catch(e) {}
+    setTimeout(() => {
+        const el = document.getElementById('bizModal');
+        el.classList.remove('show'); el.style.display = 'none';
+        el.setAttribute('aria-hidden','true'); el.removeAttribute('aria-modal');
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+        document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    }, 320);
+}
+
+function openBizModal(ev, defaultDate) {
+    // Reset
+    document.getElementById('bId').value      = ev?.id        || '0';
+    document.getElementById('bType').value    = ev?.event_type || 'purchase';
+    document.getElementById('bTitle').value   = ev?.title      || '';
+    document.getElementById('bAmount').value  = ev?.amount     || '';
+    document.getElementById('bNotes').value   = ev?.notes      || '';
+    document.getElementById('bColor').value   = ev?.color      || '#E67E22';
+    document.getElementById('bizModalTitle').textContent = ev ? '✏️ แก้ไข Event งาน' : '📅 เพิ่ม Event งาน';
+    document.getElementById('bDeleteBtn').style.display  = ev ? '' : 'none';
+
+    // Dates — convert "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM"
+    const toLocal = s => s ? s.substring(0,10)+'T'+s.substring(11,16) : '';
+    if (ev) {
+        document.getElementById('bStart').value = toLocal(ev.start_at);
+        document.getElementById('bEnd').value   = toLocal(ev.end_at);
+    } else {
+        const d = defaultDate || new Date().toISOString().substring(0,10);
+        document.getElementById('bStart').value = d + 'T09:00';
+        document.getElementById('bEnd').value   = '';
+    }
+
+    bizTypeChanged();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bizModal')).show();
+}
+
+function bizTypeChanged() {
+    const type = document.getElementById('bType').value;
+    // Show amount only for purchase/delivery
+    document.getElementById('bAmountRow').style.display =
+        ['purchase','delivery'].includes(type) ? '' : 'none';
+    // Auto-set color if field is at default
+    if (!document.getElementById('bId').value || document.getElementById('bId').value === '0') {
+        document.getElementById('bColor').value = BIZ_COLOR_DEFAULTS[type] || '#95A5A6';
+    }
+}
+
+function saveBizEvent() {
+    const title   = document.getElementById('bTitle').value.trim();
+    const startAt = document.getElementById('bStart').value;
+    if (!title)   { alert('กรุณากรอกชื่อ Event'); return; }
+    if (!startAt) { alert('กรุณาเลือกวันที่และเวลา'); return; }
+
+    const body = new URLSearchParams({
+        action:     'save_biz',
+        id:         document.getElementById('bId').value,
+        event_type: document.getElementById('bType').value,
+        title,
+        start_at:   startAt.replace('T',' ') + ':00',
+        end_at:     (document.getElementById('bEnd').value || '').replace('T',' ') + (document.getElementById('bEnd').value ? ':00' : ''),
+        amount:     document.getElementById('bAmount').value || '',
+        notes:      document.getElementById('bNotes').value,
+        color:      document.getElementById('bColor').value,
+    });
+
+    fetch('', { method:'POST', body })
+        .then(r => r.json())
+        .then(res => {
+            if (res.ok) { closeBizModal(); location.reload(); }
+            else        { alert(res.msg || 'เกิดข้อผิดพลาด'); }
+        });
+}
+
+function deleteBizEvent() {
+    if (!confirm('ลบ Event นี้?')) return;
+    fetch('', { method:'POST', body: new URLSearchParams({ action:'delete_biz', id: document.getElementById('bId').value }) })
+        .then(r => r.json())
+        .then(res => { if (res.ok) { closeBizModal(); location.reload(); } });
+}
+
+// Called when clicking existing biz event on calendar — opens edit modal
+function showBizEvent(ev) {
+    openBizModal(ev);
+}
+
 function openAdd(dateStr) {
+    if (dateStr) {
+        showAddPicker(dateStr);
+        return;
+    }
     resetForm();
     if (dateStr) {
         document.getElementById('fScheduled').value = dateStr + 'T09:00';
@@ -862,6 +1209,7 @@ function openEdit(id) {
     document.getElementById('fTitle').value     = post.title;
     document.getElementById('fType').value      = post.content_type;
     document.getElementById('fStatus').value    = post.status;
+    updateStatusHint(post.status);
     document.getElementById('fCaption').value   = post.caption || '';
     document.getElementById('fHashtags').value  = post.hashtags || '';
     document.getElementById('fProduct').value   = post.product_id || '';

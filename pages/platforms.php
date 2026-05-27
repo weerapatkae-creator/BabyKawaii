@@ -51,7 +51,7 @@ while ($row = $pfSalesStmt->fetch()) {
             <h1 class="page-title">🔗 แพลตฟอร์มขาย</h1>
             <p class="page-subtitle">จัดการแพลตฟอร์มและดูยอดขายแต่ละช่องทาง</p>
         </div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#pfModal" onclick="openPfModal()">
+        <button class="btn btn-primary" onclick="openPfModal()">
             <i class="fas fa-plus me-1"></i> เพิ่มแพลตฟอร์ม
         </button>
     </div>
@@ -117,66 +117,189 @@ while ($row = $pfSalesStmt->fetch()) {
         <?php endforeach; ?>
     </div>
 
-    <!-- Tips for each platform -->
+    <!-- Platform Tips -->
     <div class="row g-4">
         <div class="col-12">
             <div class="card">
-                <div class="card-header"><span class="card-title">💡 เคล็ดลับการขายแต่ละแพลตฟอร์ม</span></div>
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <span class="card-title">💡 คู่มือขายแต่ละแพลตฟอร์ม</span>
+                    <span class="text-muted" style="font-size:.75rem;">อ้างอิงจากข้อมูลตลาดไทย 2025-2026</span>
+                </div>
                 <div class="card-body">
-                    <div class="row g-4">
-                        <div class="col-md-6 col-lg-3">
-                            <div class="text-center p-3" style="background:var(--blue-light);border-radius:12px;">
-                                <div style="font-size:2rem;">📘</div>
-                                <h6 class="mt-2 fw-bold" style="color:#1877F2;">Facebook Page</h6>
-                                <ul class="text-start text-muted list-unstyled" style="font-size:0.82rem;">
-                                    <li>✅ โพสต์รูปสวย ใส่ราคา</li>
-                                    <li>✅ ทำ Reels สั้น 15-30 วิ</li>
-                                    <li>✅ Live สดทุกอาทิตย์</li>
-                                    <li>✅ โปรโมทด้วยโฆษณา</li>
-                                    <li>✅ ตอบ Comment เร็ว</li>
-                                </ul>
+
+                    <!-- Tabs -->
+                    <ul class="nav nav-tabs mb-3" id="tipTabs">
+                        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tip-fb">📘 Facebook</a></li>
+                        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tip-tt">🎵 TikTok Shop</a></li>
+                        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tip-ig">📸 Instagram</a></li>
+                        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tip-general">🎯 ภาพรวม</a></li>
+                    </ul>
+
+                    <div class="tab-content">
+
+                        <!-- Facebook -->
+                        <div class="tab-pane fade show active" id="tip-fb">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#EBF5FF;border-left:4px solid #1877F2;">
+                                        <div class="fw-bold mb-2" style="color:#1877F2;">📹 Content ที่ทำงาน</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>🎬 Reels 15–30 วิ แสดงชุดบนเด็กจริง</li>
+                                            <li>🛍️ Live ขายสดทุกอาทิตย์ Conversion ~7.4%</li>
+                                            <li>📸 รูป Before/After ใส่ชุด + ราคาชัดเจน</li>
+                                            <li>🎁 โพสต์ลุ้นรางวัล Tag เพื่อนเพิ่มคนรู้จัก</li>
+                                            <li>💬 Behind-the-scenes แพ็คของ รีวิวจากแม่</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#FFF3E0;border-left:4px solid #FF9800;">
+                                        <div class="fw-bold mb-2" style="color:#E65100;">⏰ เวลาโพสต์ที่ดีที่สุด</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>🌅 <strong>07:00–09:00</strong> — แม่ตื่นพาลูกไปโรงเรียน</li>
+                                            <li>☀️ <strong>11:30–13:00</strong> — พักกลางวัน เลื่อน feed</li>
+                                            <li>🌙 <strong>19:00–22:00</strong> — ช่วง Prime time</li>
+                                            <li>📅 วันศุกร์–อาทิตย์ Engagement สูงกว่า 30%</li>
+                                            <li>💡 โพสต์อย่างน้อย <strong>4–5 ครั้ง/อาทิตย์</strong></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#F3E5F5;border-left:4px solid #9C27B0;">
+                                        <div class="fw-bold mb-2" style="color:#6A1B9A;">🚀 เพิ่มยอดขาย</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>💰 ยิง Ads เฉพาะกลุ่ม "แม่ลูกอ่อน อายุ 22–38"</li>
+                                            <li>🤝 จ้าง Nano-influencer (1K–10K followers) ได้ Engagement 3–4× กว่าดารา</li>
+                                            <li>💬 ตอบ Comment ภายใน <strong>1 ชั่วโมง</strong> ช่วยให้ Reach เพิ่ม</li>
+                                            <li>🔁 Retarget คนที่เคยเข้าเพจแต่ยังไม่ซื้อ</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-6 col-lg-3">
-                            <div class="text-center p-3" style="background:#f5f5f5;border-radius:12px;">
-                                <div style="font-size:2rem;">🎵</div>
-                                <h6 class="mt-2 fw-bold">TikTok Shop</h6>
-                                <ul class="text-start text-muted list-unstyled" style="font-size:0.82rem;">
-                                    <li>✅ วิดีโอสนุก ใส่เพลงเทรนด์</li>
-                                    <li>✅ Unboxing / รีวิว</li>
-                                    <li>✅ ทำ Hashtag Challenge</li>
-                                    <li>✅ ร่วม TikTok Affiliate</li>
-                                    <li>✅ Live ขายสด</li>
-                                </ul>
+
+                        <!-- TikTok -->
+                        <div class="tab-pane fade" id="tip-tt">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#f0f0f0;border-left:4px solid #010101;">
+                                        <div class="fw-bold mb-2">🎬 Content ที่ viral</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>👶 เด็กใส่ชุด น่ารัก ตลก ใช้เพลง trending</li>
+                                            <li>📦 Unboxing สินค้าใหม่ เปิดกล่องจริง</li>
+                                            <li>🔄 Before/After เปลี่ยนชุดให้เด็ก</li>
+                                            <li>😅 Day-in-life แม่กับลูก ของแท้ไม่ปรุงแต่ง</li>
+                                            <li>📊 71% ของ user ซื้อสินค้าระหว่างดูวิดีโอ</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#FFF8E1;border-left:4px solid #FFC107;">
+                                        <div class="fw-bold mb-2" style="color:#E65100;">🛒 TikTok Shop Tips</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>🔗 ใส่ Product Link ในทุกวิดีโอ</li>
+                                            <li>📡 Live ขายสด อย่างน้อย <strong>2× /อาทิตย์</strong></li>
+                                            <li>👥 Thai shoppers ซื้อระหว่าง Live สูงกว่า 3×</li>
+                                            <li>🤳 ใช้ TikTok Affiliate ให้ Influencer รีวิว</li>
+                                            <li>🔍 ใส่ Keyword ในชื่อสินค้า เช่น "ชุดเด็ก NB"</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#E8F5E9;border-left:4px solid #4CAF50;">
+                                        <div class="fw-bold mb-2" style="color:#1B5E20;">📈 Algorithm Tricks</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>⏱️ 3 วินาทีแรกต้องดึงดูด — เปิดด้วยเด็กน่ารัก</li>
+                                            <li>🎵 ใช้เพลง trending ใน 7 วันล่าสุดเท่านั้น</li>
+                                            <li>📅 โพสต์ <strong>วันละ 1–2 คลิป</strong> ช่วง 18:00–21:00</li>
+                                            <li>#️⃣ Hashtag: #ชุดเด็ก #เสื้อผ้าเด็ก #แม่และเด็ก</li>
+                                            <li>📊 ค่าคอม TikTok 5% ต้องบวกเข้าราคาขาย</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-6 col-lg-3">
-                            <div class="text-center p-3" style="background:linear-gradient(135deg,#FFF0F5,#FFF0F0);border-radius:12px;">
-                                <div style="font-size:2rem;">📸</div>
-                                <h6 class="mt-2 fw-bold" style="color:#E4405F;">Instagram</h6>
-                                <ul class="text-start text-muted list-unstyled" style="font-size:0.82rem;">
-                                    <li>✅ รูปภาพสวยงาม สม่ำเสมอ</li>
-                                    <li>✅ Reel สั้น น่ารัก</li>
-                                    <li>✅ Stories ทุกวัน</li>
-                                    <li>✅ Hashtag เด็กๆ</li>
-                                    <li>✅ Collab กับแม่บล็อก</li>
-                                </ul>
+
+                        <!-- Instagram -->
+                        <div class="tab-pane fade" id="tip-ig">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#FFF0F5;border-left:4px solid #E4405F;">
+                                        <div class="fw-bold mb-2" style="color:#E4405F;">🖼️ Visual Strategy</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>🎨 Feed สีพาสเทล โทนขาว/ครีม/ชมพูอ่อน</li>
+                                            <li>👶 รูปเด็กใส่จริง ไม่ใช่แค่แบน flat-lay</li>
+                                            <li>📐 Reel สั้น 7–15 วิ Carousel รูปหลายชุด</li>
+                                            <li>🌅 Stories ทุกวัน: poll / question / countdown</li>
+                                            <li>📍 Tag Location เช่น "Bangkok" เพิ่ม Reach</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#E3F2FD;border-left:4px solid #2196F3;">
+                                        <div class="fw-bold mb-2" style="color:#0D47A1;">👥 กลุ่มเป้าหมาย IG</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>👩 60.6% เป็นผู้หญิง อายุ 25–34 ปี</li>
+                                            <li>💎 กลุ่มนี้ซื้อสินค้าพรีเมียมได้</li>
+                                            <li>🤝 Collab กับ "แม่บล็อก" / momfluencer</li>
+                                            <li>🌱 เน้น Organic / BPA-free ขายดีมาก</li>
+                                            <li>⭐ Review จริงจากแม่ สร้าง Trust ได้สูง</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3 rounded-3" style="background:#F3E5F5;border-left:4px solid #9C27B0;">
+                                        <div class="fw-bold mb-2" style="color:#4A148C;">#️⃣ Hashtag แนะนำ</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;">
+                                            <li>#ชุดเด็กแรกเกิด #babyfashionthailand</li>
+                                            <li>#แม่และเด็ก #ของใช้เด็ก #เสื้อผ้าเด็ก</li>
+                                            <li>#newbornthailand #babyclothes</li>
+                                            <li>#ชุดทารก #ชุดเด็กน่ารัก</li>
+                                            <li>💡 ใช้ 10–15 Hashtag ต่อโพสต์ ผสมใหญ่-เล็ก</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-6 col-lg-3">
-                            <div class="text-center p-3" style="background:#f0fff4;border-radius:12px;">
-                                <div style="font-size:2rem;">💬</div>
-                                <h6 class="mt-2 fw-bold" style="color:#00B900;">Line OA</h6>
-                                <ul class="text-start text-muted list-unstyled" style="font-size:0.82rem;">
-                                    <li>✅ Broadcast โปรโมชั่น</li>
-                                    <li>✅ Rich Menu สวยงาม</li>
-                                    <li>✅ ตอบแชทรวดเร็ว</li>
-                                    <li>✅ ทำ Line Shopping</li>
-                                    <li>✅ Coupon สำหรับ member</li>
-                                </ul>
+
+                        <!-- ภาพรวม -->
+                        <div class="tab-pane fade" id="tip-general">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="p-3 rounded-3" style="background:#E8F5E9;border-left:4px solid #4CAF50;">
+                                        <div class="fw-bold mb-2" style="color:#1B5E20;">📊 ข้อมูลตลาดไทย 2025–2026</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;line-height:1.9;">
+                                            <li>📱 คนไทยใช้ Social Media <strong>เฉลี่ย 5 ชม./วัน</strong></li>
+                                            <li>🎵 TikTok มีผู้ใช้ <strong>44.4 ล้านคน</strong> (57.8% ของประชากร)</li>
+                                            <li>🛒 TikTok = แพลตฟอร์ม Social Commerce อันดับ 1 ในไทย</li>
+                                            <li>📡 Live Shopping มี Conversion Rate <strong>~7.4%</strong></li>
+                                            <li>⭐ 35.6% อ่าน Review ก่อนซื้อทุกครั้ง</li>
+                                            <li>🤳 Micro-influencer (1K–10K) ให้ Engagement <strong>3–4×</strong> กว่าดารา</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-3 rounded-3" style="background:#FFF3E0;border-left:4px solid #FF9800;">
+                                        <div class="fw-bold mb-2" style="color:#E65100;">🎯 กลยุทธ์รวมทุกแพลตฟอร์ม</div>
+                                        <ul class="list-unstyled mb-0" style="font-size:.83rem;line-height:1.9;">
+                                            <li>1️⃣ <strong>TikTok</strong> — สร้าง Awareness ด้วย video viral</li>
+                                            <li>2️⃣ <strong>Facebook</strong> — ปิดการขาย DM + Live ขายสด</li>
+                                            <li>3️⃣ <strong>Instagram</strong> — สร้าง Brand Image พรีเมียม</li>
+                                            <li>4️⃣ <strong>LINE OA</strong> — แจ้งเตือน Admin รับออเดอร์</li>
+                                            <li>📝 Content แบบ "ของแท้ ไม่ปรุงแต่ง" ได้ผลดีกว่าโฆษณา</li>
+                                            <li>♻️ ถ่ายวิดีโอ 1 ครั้ง → ตัดเป็น TikTok + Reel + Stories</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="p-3 rounded-3" style="background:#FDE8E8;border-left:4px solid #E53935;font-size:.82rem;">
+                                        ⚠️ <strong>สิ่งที่ห้ามทำ:</strong> ซื้อ Follower / Like ปลอม · โพสต์ไม่สม่ำเสมอ · ไม่ตอบ Comment · ใช้รูป flat-lay อย่างเดียวโดยไม่มีเด็กจริง · ตั้งราคาถูกเกินไปจนไม่น่าเชื่อถือ
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
+
+                    </div><!-- end tab-content -->
                 </div>
             </div>
         </div>
@@ -190,7 +313,7 @@ while ($row = $pfSalesStmt->fetch()) {
             <input type="hidden" name="save_platform" value="1">
             <input type="hidden" name="platform_id" id="pfId" value="0">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title" id="pfModalTitle">➕ เพิ่มแพลตฟอร์ม</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-header"><h5 class="modal-title" id="pfModalTitle">➕ เพิ่มแพลตฟอร์ม</h5><button type="button" class="btn-close" onclick="closePfModal()"></button></div>
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-8">
@@ -235,7 +358,7 @@ while ($row = $pfSalesStmt->fetch()) {
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary">✅ บันทึก</button>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="closePfModal()">ยกเลิก</button>
                 </div>
             </div>
         </form>
@@ -243,6 +366,22 @@ while ($row = $pfSalesStmt->fetch()) {
 </div>
 <script>
 const pfModalEl = document.getElementById('pfModal');
+
+function closePfModal() {
+    try { bootstrap.Modal.getInstance(pfModalEl)?.hide(); } catch(e) {}
+    setTimeout(() => {
+        pfModalEl.classList.remove('show');
+        pfModalEl.style.display = 'none';
+        pfModalEl.setAttribute('aria-hidden', 'true');
+        pfModalEl.removeAttribute('aria-modal');
+        pfModalEl.removeAttribute('role');
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+        document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    }, 320);
+}
+
 function openPfModal(pf) {
     if (pf) {
         document.getElementById('pfModalTitle').textContent = '✏️ แก้ไขแพลตฟอร์ม';
@@ -259,9 +398,9 @@ function openPfModal(pf) {
     } else {
         document.getElementById('pfModalTitle').textContent = '➕ เพิ่มแพลตฟอร์ม';
         document.getElementById('pfId').value = '0';
-        document.querySelector('[name=name]').value = '';
+        document.getElementById('pfName').value = '';
     }
-    new bootstrap.Modal(pfModalEl).show();
+    bootstrap.Modal.getOrCreateInstance(pfModalEl).show();
 }
 </script>
 <?php include __DIR__ . '/../includes/footer.php'; ?>

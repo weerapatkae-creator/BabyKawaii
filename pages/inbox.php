@@ -110,6 +110,7 @@ require_once __DIR__ . '/../includes/header.php';
 /* ── Data ───────────────────────────────────────────────────────── */
 $statusFilter   = $_GET['status']   ?? 'open';
 $platformFilter = (int)($_GET['platform'] ?? 0);
+$accountFilter  = (int)($_GET['account']  ?? 0);
 $search         = trim($_GET['q']   ?? '');
 $activeConvId   = (int)($_GET['conv'] ?? 0);
 
@@ -117,13 +118,17 @@ $where  = ['1=1'];
 $params = [];
 if ($statusFilter !== 'all') { $where[] = 'c.status = ?'; $params[] = $statusFilter; }
 if ($platformFilter)         { $where[] = 'c.platform_id = ?'; $params[] = $platformFilter; }
+if ($accountFilter)          { $where[] = 'c.platform_account_id = ?'; $params[] = $accountFilter; }
 if ($search)                 { $where[] = '(c.customer_name LIKE ? OR c.last_message LIKE ?)'; $params[] = "%$search%"; $params[] = "%$search%"; }
 
 try {
     $convStmt = $pdo->prepare(
-        "SELECT c.*, p.name as platform_name, p.icon as platform_icon, p.color as platform_color
+        "SELECT c.*,
+                p.name  AS platform_name,  p.icon  AS platform_icon,  p.color AS platform_color,
+                pa.name AS account_name,   pa.color AS account_color
          FROM conversations c
-         LEFT JOIN platforms p ON p.id = c.platform_id
+         LEFT JOIN platforms        p  ON p.id  = c.platform_id
+         LEFT JOIN platform_accounts pa ON pa.id = c.platform_account_id
          WHERE " . implode(' AND ', $where) . "
          ORDER BY c.last_message_at DESC LIMIT 80"
     );
@@ -132,6 +137,15 @@ try {
 
     $platforms    = $pdo->query("SELECT * FROM platforms WHERE is_active=1 ORDER BY name")->fetchAll();
     $quickReplies = $pdo->query("SELECT * FROM quick_replies WHERE is_active=1 ORDER BY sort_order")->fetchAll();
+
+    // Accounts grouped for filter chips
+    $allAccounts  = $pdo->query(
+        "SELECT pa.id, pa.name, pa.color, p.icon AS platform_icon, p.color AS platform_color, p.id AS platform_id
+         FROM platform_accounts pa
+         JOIN platforms p ON p.id = pa.platform_id
+         WHERE pa.is_active=1
+         ORDER BY p.name, pa.name"
+    )->fetchAll();
 
     $stats = $pdo->query("SELECT
         SUM(status='open')    AS open_count,
@@ -142,13 +156,21 @@ try {
 
     $activeConv = null;
     if ($activeConvId) {
-        $s = $pdo->prepare("SELECT c.*, p.name as platform_name, p.icon as platform_icon, p.color as platform_color FROM conversations c LEFT JOIN platforms p ON p.id=c.platform_id WHERE c.id=?");
+        $s = $pdo->prepare(
+            "SELECT c.*,
+                    p.name  AS platform_name, p.icon AS platform_icon, p.color AS platform_color,
+                    pa.name AS account_name,  pa.color AS account_color
+             FROM conversations c
+             LEFT JOIN platforms         p  ON p.id  = c.platform_id
+             LEFT JOIN platform_accounts pa ON pa.id = c.platform_account_id
+             WHERE c.id=?"
+        );
         $s->execute([$activeConvId]);
         $activeConv = $s->fetch();
     }
 } catch (Exception $e) {
     // Tables may not exist yet — show empty state
-    $conversations = []; $platforms = []; $quickReplies = [];
+    $conversations = []; $platforms = []; $quickReplies = []; $allAccounts = [];
     $stats = ['open_count'=>0,'pending_count'=>0,'closed_count'=>0,'unread_convs'=>0];
     $activeConv = null;
 }
@@ -257,9 +279,25 @@ try {
                         <?= $pf['icon'] ?> <?= htmlspecialchars($pf['name']) ?>
                     </a>
                     <?php endforeach; ?>
-                    <?php if ($platformFilter): ?>
-                    <a href="?status=<?= $statusFilter ?>" class="badge bg-secondary text-decoration-none">✕</a>
+                    <?php if ($platformFilter || $accountFilter): ?>
+                    <a href="?status=<?= $statusFilter ?>" class="badge bg-secondary text-decoration-none">✕ ล้าง</a>
                     <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <?php if (!empty($allAccounts)): ?>
+                <div class="d-flex gap-1 mt-1 flex-wrap">
+                    <?php foreach ($allAccounts as $acc):
+                        $isActiveAcc = $accountFilter === (int)$acc['id'];
+                        $bgColor     = $isActiveAcc ? ($acc['color'] ?: $acc['platform_color']) : '#f5f5f5';
+                        $txtColor    = $isActiveAcc ? '#fff' : '#555';
+                    ?>
+                    <a href="?status=<?= $statusFilter ?>&account=<?= $acc['id'] ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
+                       class="badge text-decoration-none"
+                       style="background:<?= $bgColor ?>;color:<?= $txtColor ?>;font-weight:<?= $isActiveAcc?'700':'400' ?>;"
+                       title="<?= htmlspecialchars($acc['name']) ?>">
+                        <?= $acc['platform_icon'] ?> <?= htmlspecialchars($acc['name']) ?>
+                    </a>
+                    <?php endforeach; ?>
                 </div>
                 <?php endif; ?>
             </div>
@@ -318,7 +356,15 @@ try {
                         <div class="conv-preview"><?= htmlspecialchars(mb_substr($conv['last_message'] ?? '—', 0, 50)) ?></div>
                         <div class="conv-meta">
                             <span class="conv-time"><?= $timeAgoStr ?></span>
-                            <span style="font-size:0.67rem;color:#bbb;"><?= $conv['platform_icon'] ?? '' ?></span>
+                            <span style="font-size:0.67rem;">
+                                <?php if ($conv['account_name'] ?? ''): ?>
+                                <span style="background:<?= $conv['account_color'] ?? $conv['platform_color'] ?? '#888' ?>;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.62rem;">
+                                    <?= $conv['platform_icon'] ?? '' ?> <?= htmlspecialchars($conv['account_name']) ?>
+                                </span>
+                                <?php else: ?>
+                                <span style="color:#bbb;"><?= $conv['platform_icon'] ?? '' ?></span>
+                                <?php endif; ?>
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -342,6 +388,11 @@ try {
                         <?php if ($activeConv['platform_icon']): ?>
                         <span style="background:<?= $activeConv['platform_color'] ?>;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">
                             <?= $activeConv['platform_icon'] ?> <?= htmlspecialchars($activeConv['platform_name']) ?>
+                        </span>
+                        <?php endif; ?>
+                        <?php if ($activeConv['account_name'] ?? ''): ?>
+                        <span style="background:<?= $activeConv['account_color'] ?? '#888' ?>;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">
+                            <?= htmlspecialchars($activeConv['account_name']) ?>
                         </span>
                         <?php endif; ?>
                         <span class="text-muted" style="font-size:0.7rem;">UID: <?= htmlspecialchars($activeConv['customer_uid']) ?></span>
@@ -674,15 +725,7 @@ function adjustColor(string $hex): string {
     [$r,$g,$b] = [hexdec(substr($hex,0,2)), hexdec(substr($hex,2,2)), hexdec(substr($hex,4,2))];
     return sprintf('#%02x%02x%02x', max(0,$r-40), max(0,$g-40), max(0,$b-40));
 }
-
-function timeAgo(string $datetime): string {
-    $diff = time() - strtotime($datetime);
-    if ($diff < 60)     return 'เมื่อกี้';
-    if ($diff < 3600)   return (int)($diff/60) . ' นาทีที่แล้ว';
-    if ($diff < 86400)  return (int)($diff/3600) . ' ชม.ที่แล้ว';
-    if ($diff < 604800) return (int)($diff/86400) . ' วันที่แล้ว';
-    return date('d/m', strtotime($datetime));
-}
+// timeAgo() is defined in config/database.php — do NOT redeclare here
 ?>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

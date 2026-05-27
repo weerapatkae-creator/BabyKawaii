@@ -16,12 +16,13 @@ $navGeneral = [
 
 // Admin-only menu items
 $navAdmin = [
-    ['url' => SITE_URL . '/pages/users.php',        'icon' => 'fa-users-gear',    'label' => 'จัดการผู้ใช้งาน', 'page' => 'users'],
-    ['url' => SITE_URL . '/pages/integrations.php', 'icon' => 'fa-plug',          'label' => 'เชื่อมต่อระบบ',   'page' => 'integrations'],
-    ['url' => SITE_URL . '/pages/settings.php',     'icon' => 'fa-gear',          'label' => 'ตั้งค่าร้าน',     'page' => 'settings'],
-    ['url' => SITE_URL . '/pages/data-manage.php', 'icon' => 'fa-database',      'label' => 'จัดการข้อมูล',    'page' => 'data-manage'],
-    ['url' => SITE_URL . '/pages/deploy-guide.php', 'icon' => 'fa-rocket',        'label' => 'คู่มือ Deploy',    'page' => 'deploy-guide'],
-    ['url' => SITE_URL . '/pages/system-test.php', 'icon' => 'fa-flask',         'label' => 'System Test',      'page' => 'system-test'],
+    ['url' => SITE_URL . '/pages/users.php',             'icon' => 'fa-users-gear',    'label' => 'จัดการผู้ใช้งาน',  'page' => 'users'],
+    ['url' => SITE_URL . '/pages/platform-accounts.php', 'icon' => 'fa-layer-group',   'label' => 'บัญชี Platform',    'page' => 'platform-accounts'],
+    ['url' => SITE_URL . '/pages/integrations.php',      'icon' => 'fa-plug',          'label' => 'เชื่อมต่อระบบ',    'page' => 'integrations'],
+    ['url' => SITE_URL . '/pages/settings.php',          'icon' => 'fa-gear',          'label' => 'ตั้งค่าร้าน',      'page' => 'settings'],
+    ['url' => SITE_URL . '/pages/data-manage.php',       'icon' => 'fa-database',      'label' => 'จัดการข้อมูล',     'page' => 'data-manage'],
+    ['url' => SITE_URL . '/pages/deploy-guide.php',      'icon' => 'fa-rocket',        'label' => 'คู่มือ Deploy',     'page' => 'deploy-guide'],
+    ['url' => SITE_URL . '/pages/system-test.php',       'icon' => 'fa-flask',         'label' => 'System Test',       'page' => 'system-test'],
 ];
 
 $isAdminRole = in_array($_SESSION['admin_role'] ?? '', ['superadmin', 'admin']);
@@ -72,10 +73,9 @@ $isAdminRole = in_array($_SESSION['admin_role'] ?? '', ['superadmin', 'admin']);
     <div class="sidebar-platforms">
         <div class="platform-title">แพลตฟอร์มของฉัน</div>
         <div class="platform-icons">
-            <a href="#" title="Facebook" class="platform-icon fb"><i class="fab fa-facebook-f"></i></a>
-            <a href="#" title="TikTok" class="platform-icon tt"><i class="fab fa-tiktok"></i></a>
-            <a href="#" title="Instagram" class="platform-icon ig"><i class="fab fa-instagram"></i></a>
-            <a href="#" title="Line" class="platform-icon ln"><i class="fab fa-line"></i></a>
+            <a href="<?= SITE_URL ?>/pages/platform-accounts.php?platform=facebook" title="Facebook Page DM" class="platform-icon fb"><i class="fab fa-facebook-f"></i></a>
+            <a href="<?= SITE_URL ?>/pages/platform-accounts.php?platform=tiktok"   title="TikTok Shop"      class="platform-icon tt"><i class="fab fa-tiktok"></i></a>
+            <a href="<?= SITE_URL ?>/pages/platform-accounts.php?platform=instagram" title="Instagram DM"    class="platform-icon ig"><i class="fab fa-instagram"></i></a>
         </div>
     </div>
 </aside>

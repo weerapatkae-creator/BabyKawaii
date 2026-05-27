@@ -66,6 +66,49 @@ $recentOrders = $pdo->query("
     LIMIT 8
 ")->fetchAll();
 
+// ── Cost & Profit (admin only) ────────────────────────────────────────────────
+$isAdmin = in_array($_SESSION['admin_role'] ?? '', ['superadmin', 'admin']);
+if ($isAdmin) {
+    // มูลค่าสต็อกปัจจุบัน (ต้นทุนสินค้าในมือ)
+    $inventoryCost = $pdo->query("
+        SELECT COALESCE(SUM(s.quantity * s.cost_price), 0)
+        FROM stock s
+        JOIN products p ON p.id = s.product_id
+        WHERE p.status != 'inactive'
+    ")->fetchColumn();
+
+    // ต้นทุนขายเดือนนี้ (COGS) — join products เพราะ order_items ไม่มี unit_cost
+    $cogsMonth = $pdo->query("
+        SELECT COALESCE(SUM(oi.quantity * p.cost_price), 0)
+        FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        JOIN orders o ON o.id = oi.order_id
+        WHERE MONTH(o.order_date) = MONTH(NOW())
+          AND YEAR(o.order_date)  = YEAR(NOW())
+          AND o.order_status NOT IN ('cancelled')
+    ")->fetchColumn();
+
+    // ต้นทุนขายทั้งหมด (ตลอดกาล)
+    $cogsTotal = $pdo->query("
+        SELECT COALESCE(SUM(oi.quantity * p.cost_price), 0)
+        FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.order_status NOT IN ('cancelled')
+    ")->fetchColumn();
+
+    // ยอดขายทั้งหมด (ตลอดกาล)
+    $salesTotal = $pdo->query("
+        SELECT COALESCE(SUM(total_amount), 0)
+        FROM orders WHERE order_status NOT IN ('cancelled')
+    ")->fetchColumn();
+
+    $grossProfitMonth = (float)$salesMonth - (float)$cogsMonth;
+    $grossProfitTotal = (float)$salesTotal - (float)$cogsTotal;
+    $marginMonth = $salesMonth > 0 ? ($grossProfitMonth / $salesMonth * 100) : 0;
+    $marginTotal = $salesTotal > 0 ? ($grossProfitTotal / $salesTotal * 100) : 0;
+}
+
 // Low stock products
 $lowStockProducts = $pdo->query("
     SELECT pr.name, pr.sku, s.size, s.color, s.quantity, s.min_alert, cat.name as cat_name
@@ -156,6 +199,79 @@ $platformColors = array_column($salesByPlatform, 'color');
             </div>
         </div>
     </div>
+
+    <?php if ($isAdmin): ?>
+    <!-- Cost & Profit Section (Admin only) -->
+    <div class="card mb-4" style="border:none;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);color:#fff;border-radius:16px;overflow:hidden;">
+        <div class="card-body p-3 p-md-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span style="font-size:1.1rem;">💰</span>
+                <span style="font-weight:700;font-size:0.95rem;letter-spacing:.03em;">ต้นทุน & กำไร</span>
+                <span style="font-size:0.72rem;background:rgba(255,255,255,.12);padding:2px 8px;border-radius:10px;margin-left:4px;">Admin เท่านั้น</span>
+            </div>
+            <div class="row g-3">
+
+                <!-- มูลค่าสต็อก -->
+                <div class="col-6 col-md-3">
+                    <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:14px 16px;height:100%;">
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.6);margin-bottom:4px;">📦 มูลค่าสต็อกปัจจุบัน</div>
+                        <div style="font-size:1.4rem;font-weight:800;color:#7DF9FF;">
+                            ฿<?= number_format($inventoryCost, 0) ?>
+                        </div>
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.5);margin-top:4px;">ต้นทุนสินค้าในมือ</div>
+                    </div>
+                </div>
+
+                <!-- ต้นทุนขายเดือนนี้ -->
+                <div class="col-6 col-md-3">
+                    <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:14px 16px;height:100%;">
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.6);margin-bottom:4px;">🧾 ต้นทุนขายเดือนนี้</div>
+                        <div style="font-size:1.4rem;font-weight:800;color:#FFB347;">
+                            ฿<?= number_format($cogsMonth, 0) ?>
+                        </div>
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.5);margin-top:4px;">
+                            รวมทั้งหมด ฿<?= number_format($cogsTotal, 0) ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- กำไรขั้นต้นเดือนนี้ -->
+                <div class="col-6 col-md-3">
+                    <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:14px 16px;height:100%;">
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.6);margin-bottom:4px;">✨ กำไรขั้นต้นเดือนนี้</div>
+                        <div style="font-size:1.4rem;font-weight:800;color:<?= $grossProfitMonth >= 0 ? '#98FF98' : '#FF6B6B' ?>;">
+                            <?= $grossProfitMonth >= 0 ? '+' : '' ?>฿<?= number_format($grossProfitMonth, 0) ?>
+                        </div>
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.5);margin-top:4px;">
+                            รวมทั้งหมด <?= $grossProfitTotal >= 0 ? '+' : '' ?>฿<?= number_format($grossProfitTotal, 0) ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- อัตรากำไร -->
+                <div class="col-6 col-md-3">
+                    <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:14px 16px;height:100%;">
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.6);margin-bottom:4px;">📊 อัตรากำไรขั้นต้น</div>
+                        <div style="font-size:1.4rem;font-weight:800;color:<?= $marginMonth >= 30 ? '#98FF98' : ($marginMonth >= 10 ? '#FFD700' : '#FF6B6B') ?>;">
+                            <?= number_format($marginMonth, 1) ?>%
+                        </div>
+                        <div style="font-size:.72rem;color:rgba(255,255,255,.5);margin-top:4px;">
+                            ตลอดกาล <?= number_format($marginTotal, 1) ?>%
+                            <?php
+                                $barW = min(100, max(0, (int)$marginMonth));
+                                $barColor = $marginMonth >= 30 ? '#98FF98' : ($marginMonth >= 10 ? '#FFD700' : '#FF6B6B');
+                            ?>
+                        </div>
+                        <div style="margin-top:8px;background:rgba(255,255,255,.15);border-radius:4px;height:5px;">
+                            <div style="width:<?= $barW ?>%;background:<?= $barColor ?>;height:5px;border-radius:4px;transition:width .5s;"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Charts Row -->
     <div class="row g-4 mb-4">
