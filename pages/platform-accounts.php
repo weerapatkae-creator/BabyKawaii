@@ -102,7 +102,7 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
         <i class="fas fa-info-circle mt-1 flex-shrink-0"></i>
         <div>
             <strong>แต่ละบัญชีมี Webhook URL ของตัวเอง</strong> — นำ URL ไปตั้งใน Facebook App / Instagram / TikTok Shop Developer Dashboard<br>
-            <span class="text-muted">n8n จะส่งข้อความเข้ามาที่ URL นี้ → ระบบเก็บใน Inbox แยกตาม account</span>
+            <span class="text-muted">Platform จะส่ง event เข้ามาที่ URL นี้ → ระบบเก็บใน Inbox แยกตาม account</span>
         </div>
     </div>
 
@@ -127,10 +127,20 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
 
         <?php foreach ($group['accounts'] as $acc): ?>
         <?php
-            $webhookUrl = $siteUrl . '/api/inbox-webhook.php?account_id=' . $acc['id'] . '&api_key=' . $apiKey;
+            $webhookUrl = ($acc['platform_slug'] === 'tiktok')
+                ? $siteUrl . '/api/tiktok-webhook.php?account_id=' . $acc['id']
+                : $siteUrl . '/api/inbox-webhook.php?account_id=' . $acc['id'] . '&api_key=' . $apiKey;
             $tokenPreview = $acc['page_access_token']
                 ? substr($acc['page_access_token'], 0, 12) . '••••••••' . substr($acc['page_access_token'], -4)
                 : '— ยังไม่ได้ตั้งค่า —';
+
+            // TikTok OAuth URL (ใช้ app_key ที่เก็บใน webhook_verify_token)
+            $tiktokAuthUrl = '';
+            if ($acc['platform_slug'] === 'tiktok' && $acc['webhook_verify_token']) {
+                $state = base64_encode($acc['webhook_verify_token'] . ':' . $acc['app_secret'] . ':' . $acc['id']);
+                $redirectUri = urlencode($siteUrl . '/api/tiktok-oauth.php');
+                $tiktokAuthUrl = "https://services.tiktok.com/oauth/authorize?app_id={$acc['webhook_verify_token']}&state={$state}&redirect_uri={$redirectUri}";
+            }
         ?>
         <div class="acc-row" id="acc-row-<?= $acc['id'] ?>">
             <div class="acc-dot" style="background:<?= htmlspecialchars($acc['color']) ?>;"></div>
@@ -143,6 +153,11 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
                     <?php if ($acc['account_uid']): ?>
                     <span class="acc-uid">ID: <?= htmlspecialchars($acc['account_uid']) ?></span>
                     <?php endif; ?>
+                    <?php if ($acc['platform_slug'] === 'tiktok'): ?>
+                    <span class="badge <?= $acc['page_access_token'] ? 'bg-success' : 'bg-warning text-dark' ?>" style="font-size:.65rem;">
+                        <?= $acc['page_access_token'] ? '✅ Token OK' : '⚠️ ยังไม่ได้ authorize' ?>
+                    </span>
+                    <?php endif; ?>
                 </div>
                 <div class="acc-token-preview mt-1">🔑 Token: <?= htmlspecialchars($tokenPreview) ?></div>
                 <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
@@ -150,7 +165,7 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
                     <span class="webhook-url" onclick="copyWebhook(this)" title="คลิกเพื่อคัดลอก">
                         <?= htmlspecialchars($webhookUrl) ?>
                     </span>
-                    <?php if ($acc['webhook_verify_token']): ?>
+                    <?php if ($acc['platform_slug'] !== 'tiktok' && $acc['webhook_verify_token']): ?>
                     <span style="font-size:.7rem;color:#888;">Verify token: <code><?= htmlspecialchars($acc['webhook_verify_token']) ?></code></span>
                     <?php endif; ?>
                 </div>
@@ -158,7 +173,12 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
                 <div class="mt-1" style="font-size:.75rem;color:#999;"><?= htmlspecialchars($acc['notes']) ?></div>
                 <?php endif; ?>
             </div>
-            <div class="d-flex gap-2 flex-shrink-0">
+            <div class="d-flex gap-2 flex-shrink-0 flex-wrap justify-content-end">
+                <?php if ($tiktokAuthUrl): ?>
+                <a href="<?= htmlspecialchars($tiktokAuthUrl) ?>" class="btn btn-sm btn-outline-dark" title="ขอ Access Token จาก TikTok" target="_blank">
+                    🔗 Authorize
+                </a>
+                <?php endif; ?>
                 <button class="btn btn-sm btn-outline-secondary" onclick="openModal(<?= $pid ?>, <?= htmlspecialchars(json_encode($acc)) ?>)" title="แก้ไข">
                     <i class="fas fa-edit"></i>
                 </button>
@@ -331,25 +351,24 @@ const PLATFORM_HINTS = {
                 4. ใช้ Page Access Token + App Secret เดียวกับ Facebook Page`
     },
     tiktok: {
-        uid:         '@username ของ TikTok (เช่น @babykawaii.th)',
-        token:       'ไม่จำเป็นสำหรับบัญชีทั่วไป — ใส่ถ้ามี Client Token จาก TikTok for Developers',
-        secret:      'ไม่จำเป็นสำหรับบัญชีทั่วไป',
-        verify:      'ไม่จำเป็นสำหรับบัญชีทั่วไป',
-        lSecret:     'Client Secret (ถ้ามี)',
-        lVerify:     'Client Key (ถ้ามี)',
-        showSecret:  false,
-        showVerify:  false,
-        webhookPath: '',
-        guide: `<div class="alert alert-warning mb-2 py-2" style="font-size:.8rem;">
-                    ⚠️ <strong>TikTok บัญชีทั่วไปไม่รองรับ DM API</strong> — ข้อความ Direct Message ต้องเปิดดูใน TikTok แอพโดยตรง
-                    (API สำหรับ DM มีเฉพาะ TikTok Shop เท่านั้น)
-                </div>
-                <strong>🎵 สิ่งที่ทำได้กับบัญชีทั่วไป:</strong><br>
-                ✅ เก็บข้อมูล username, follower count, URL เพจ<br>
-                ✅ แสดงในหน้าแพลตฟอร์มและ Dashboard<br>
-                ✅ นับออเดอร์ที่มาจาก TikTok (กรอก manual)<br>
-                ❌ รับข้อความ DM อัตโนมัติไม่ได้<br><br>
-                💡 ถ้าต้องการรับ DM อัตโนมัติ → ต้องสมัคร <a href="https://seller-th.tiktok.com" target="_blank">TikTok Shop</a>`
+        uid:         'Shop ID จาก TikTok Seller Center → My Account → Shop Info',
+        token:       'Access Token จาก TikTok Partner Portal → My Apps → App Detail → Authorization',
+        secret:      'App Secret จาก TikTok Partner Portal → My Apps → App Detail → App Info',
+        verify:      'App Key (Client Key) จาก TikTok Partner Portal → My Apps → App Detail → App Info',
+        lSecret:     'App Secret (TikTok Shop)',
+        lVerify:     'App Key (TikTok Shop)',
+        showSecret:  true,
+        showVerify:  true,
+        webhookPath: '/api/tiktok-webhook.php',
+        guide: `<strong>🛍️ วิธีเชื่อมต่อ TikTok Shop IM API:</strong><br>
+                1. เข้า <a href="https://partner.tiktokshop.com" target="_blank">TikTok Partner Portal</a> → My Apps → สร้าง App ใหม่ (หรือใช้ App เดิม)<br>
+                2. เปิด Permission: <code>im.message:write</code>, <code>im.message:read</code><br>
+                3. คัดลอก <strong>App Key</strong> (ใส่ในช่อง App Key) และ <strong>App Secret</strong><br>
+                4. Authorization → Generate Access Token → คัดลอก Access Token<br>
+                5. ใส่ <strong>Shop ID</strong> จาก Seller Center → My Account<br>
+                6. นำ <strong>Webhook URL</strong> ด้านล่างไปตั้งใน Partner Portal → Event Settings → Webhooks<br>
+                &nbsp;&nbsp;&nbsp; Subscribe events: <code>IM_MESSAGE</code>, <code>ORDERS_STATUS_CHANGE</code><br>
+                7. กด Verify — ระบบจะตอบ challenge อัตโนมัติ ✅`
     },
     walkin: {
         uid:         'ไม่จำเป็น',
@@ -377,18 +396,18 @@ function updatePlatformHint() {
     document.getElementById('hintVerify').textContent     = h.verify || '';
     document.getElementById('lSecret').textContent        = h.lSecret || 'App Secret';
     document.getElementById('lVerify').textContent        = h.lVerify  || 'Verify Token';
-    document.getElementById('lUid').textContent           = slug === 'tiktok' ? 'TikTok Username' :
+    document.getElementById('lUid').textContent           = slug === 'tiktok' ? 'Shop ID' :
                                                             slug === 'walkin'  ? 'รหัสสาขา (ถ้ามี)' :
                                                             'Account / Page ID';
-    document.getElementById('lToken').textContent         = slug === 'tiktok' ? 'Client Token (ถ้ามี)' : 'Page Access Token';
+    document.getElementById('lToken').textContent         = slug === 'tiktok' ? 'Access Token (TikTok Shop)' : 'Page Access Token';
     document.getElementById('setupGuide').innerHTML       = h.guide;
     document.getElementById('fColor').value               = col;
 
     document.getElementById('rowSecret').style.display = h.showSecret ? '' : 'none';
     document.getElementById('rowVerify').style.display = h.showVerify ? '' : 'none';
 
-    // TikTok ทั่วไป: token field ไม่บังคับ
-    const tokenRequired = slug !== 'tiktok' && slug !== 'walkin';
+    // walk-in เท่านั้นที่ไม่ต้อง token
+    const tokenRequired = slug !== 'walkin';
     document.getElementById('fToken').required = tokenRequired;
     document.querySelector('label[for] span.text-danger, #lToken + span')?.remove();
 

@@ -23,7 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 
         $conv = $pdo->prepare("
             SELECT c.*, p.name as platform_name, p.slug as platform_slug,
-                   pa.page_access_token, pa.account_uid as page_id
+                   pa.page_access_token, pa.account_uid as page_id,
+                   pa.app_secret, pa.webhook_verify_token as app_key
             FROM conversations c
             LEFT JOIN platforms p ON p.id=c.platform_id
             LEFT JOIN platform_accounts pa ON pa.id=c.platform_account_id
@@ -33,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         $conv = $conv->fetch();
 
         $sent = false;
+        $slug = '';
         if ($conv) {
             $slug = $conv['platform_slug'] ?? '';
 
@@ -40,6 +42,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             if (in_array($slug, ['facebook','instagram']) && $conv['page_access_token']) {
                 require_once __DIR__ . '/../includes/meta-api.php';
                 $sent = sendFbMessage($conv['customer_uid'], $content, $conv['page_access_token']);
+            }
+
+            // ── ส่งผ่าน TikTok Shop IM API ──
+            if (!$sent && $slug === 'tiktok' && $conv['page_access_token'] && $conv['app_key']) {
+                require_once __DIR__ . '/../includes/tiktok-api.php';
+                $sent = sendTiktokMessage(
+                    $conv['customer_uid'],        // conversation_id
+                    $content,
+                    $conv['page_access_token'],   // access_token
+                    $conv['page_id']    ?? '',    // shop_id
+                    $conv['app_key']    ?? '',    // app_key
+                    $conv['app_secret'] ?? ''     // app_secret
+                );
             }
 
             // ── trigger n8n (สำหรับแพลตฟอร์มอื่น หรือ fallback) ──
@@ -54,7 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             }
         }
 
-        echo json_encode(['ok'=>true, 'msg_id'=>$msgId, 'sent_at'=>date('H:i'), 'sent_via'=>$sent?'facebook_api':'n8n']);
+        $via = $sent ? (($slug === 'tiktok') ? 'tiktok_api' : 'facebook_api') : 'n8n';
+        echo json_encode(['ok'=>true, 'msg_id'=>$msgId, 'sent_at'=>date('H:i'), 'sent_via'=>$via]);
         exit;
     }
 

@@ -4,22 +4,33 @@
  * ─────────────────────────────────────────
  * Webhook URL: https://babykawaii.store/api/tiktok-webhook.php?account_id=X
  *
- * ตั้ง Webhook ใน TikTok Seller Center:
- *   Partner Portal → My Apps → Event Settings → Webhooks
+ * ตั้ง Webhook ใน TikTok Partner Portal:
+ *   My Apps → Event Settings → Webhooks → ใส่ URL → Verify
+ *   Subscribe: IM_MESSAGE, ORDERS_STATUS_CHANGE
  *
- * Events handled:
- *   type 7  = IM_MESSAGE   → บันทึกข้อความเข้า Inbox
- *   type 1  = ORDER        → แจ้งเตือนออเดอร์ใหม่
+ * Events:
+ *   type 7 = IM_MESSAGE  → บันทึกข้อความเข้า Inbox
+ *   type 1 = ORDER       → แจ้งเตือนออเดอร์ใหม่ LINE
+ *   GET ?challenge=xxx   → Webhook verification
  */
 require_once __DIR__ . '/../config/database.php';
 
-$rawBody  = file_get_contents('php://input');
-$payload  = json_decode($rawBody, true);
+$rawBody = file_get_contents('php://input');
+
+// ── Webhook Verification (GET challenge) ─────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['challenge'])) {
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo json_encode(['challenge' => $_GET['challenge']]);
+    exit;
+}
 
 http_response_code(200);
 header('Content-Type: application/json');
 
-// ── โหลด account ──────────────────────────────────────────────────
+$payload = json_decode($rawBody, true);
+
+// ── โหลด account ─────────────────────────────────────────────────
 $accountId = (int)($_GET['account_id'] ?? 0);
 if (!$accountId) {
     echo json_encode(['ok' => false, 'msg' => 'missing account_id']);
@@ -41,12 +52,17 @@ if (!$acc) {
     exit;
 }
 
-// ── Verify signature (TikTok Shop v2) ────────────────────────────
-// TikTok ส่ง header: x-tiktok-signature = HMAC-SHA256(app_secret, body)
-if ($acc['app_secret']) {
-    $sig      = $_SERVER['HTTP_X_TIKTOK_SIGNATURE'] ?? '';
-    $expected = hash_hmac('sha256', $rawBody, $acc['app_secret']);
-    if ($sig && !hash_equals($expected, ltrim($sig, 'sha256='))) {
+// ── Verify TikTok Shop Signature ─────────────────────────────────
+// TikTok Shop: SHA256(app_secret + timestamp + nonce + body)
+// Header: x-tiktok-signature
+if ($acc['app_secret'] && !empty($rawBody)) {
+    $sig       = $_SERVER['HTTP_X_TIKTOK_SIGNATURE'] ?? '';
+    $timestamp = $payload['timestamp'] ?? '';
+    $nonce     = $payload['nonce']     ?? '';
+
+    $expected  = hash('sha256', $acc['app_secret'] . $timestamp . $nonce . $rawBody);
+
+    if ($sig && !hash_equals($expected, $sig)) {
         http_response_code(401);
         echo json_encode(['ok' => false, 'msg' => 'invalid signature']);
         exit;
@@ -58,31 +74,31 @@ if (empty($payload)) {
     exit;
 }
 
-$eventType  = (int)($payload['type']    ?? 0);
-$shopId     = $payload['shop_id']        ?? '';
-$data       = $payload['data']           ?? [];
+$eventType = (int)($payload['type'] ?? 0);
+$data      = $payload['data']       ?? [];
 
-// ── Event: IM_MESSAGE (type 7) ──────────────────────────────────
+// ── Event: IM_MESSAGE (type 7) ───────────────────────────────────
 if ($eventType === 7) {
-    $senderId   = (string)($data['from_user_id']   ?? ($data['buyer_uid'] ?? ''));
-    $senderName = $data['from_user_name']            ?? ($data['buyer_nickname'] ?? 'ลูกค้า TikTok');
-    $msgText    = $data['message']                   ?? ($data['content'] ?? '[ข้อความ]');
-    $msgType    = $data['message_type']              ?? 'text';
-    $convUid    = $data['conversation_id']           ?? $senderId;
-    $msgId      = $data['message_id']                ?? '';
+    // TikTok Shop ส่ง buyer_uid + conversation_id
+    $senderId    = (string)($data['buyer_uid']       ?? ($data['from_user_id'] ?? ''));
+    $senderName  = $data['buyer_nickname']            ?? ($data['from_user_name'] ?? 'ลูกค้า TikTok');
+    $convUid     = $data['conversation_id']           ?? $senderId; // ใช้ conversation_id เป็น key
+    $msgText     = $data['content']                   ?? ($data['message'] ?? '[ข้อความ]');
+    $msgType     = $data['content_type']              ?? 'text';
+    $msgId       = $data['message_id']                ?? '';
 
-    if (!$senderId) {
-        echo json_encode(['ok' => true, 'msg' => 'no sender_id']);
+    if (!$convUid) {
+        echo json_encode(['ok' => true, 'msg' => 'no conversation_id']);
         exit;
     }
 
-    // Upsert conversation
+    // Upsert conversation — ใช้ conversation_id เป็น customer_uid
     $existing = $pdo->prepare("
         SELECT id, unread_count FROM conversations
         WHERE platform_id=? AND platform_account_id=? AND customer_uid=?
         LIMIT 1
     ");
-    $existing->execute([$acc['pid'], $accountId, $senderId]);
+    $existing->execute([$acc['pid'], $accountId, $convUid]);
     $existingRow = $existing->fetch();
 
     if ($existingRow) {
@@ -101,31 +117,25 @@ if ($eventType === 7) {
                 (platform_id, platform_account_id, platform_account_name,
                  customer_uid, customer_name, last_message, last_message_at, unread_count, status)
             VALUES (?,?,?,?,?,?,NOW(),1,'open')
-        ")->execute([$acc['pid'], $accountId, $acc['name'], $senderId, $senderName, mb_substr($msgText, 0, 255)]);
+        ")->execute([$acc['pid'], $accountId, $acc['name'], $convUid, $senderName, mb_substr($msgText, 0, 255)]);
         $convId = (int)$pdo->lastInsertId();
     }
 
-    // Save message (prevent duplicate)
+    // Save message
     $pdo->prepare("
         INSERT IGNORE INTO messages
             (conversation_id, direction, message_type, content, platform_message_id, sent_at)
         VALUES (?, 'inbound', ?, ?, ?, NOW())
-    ")->execute([$convId, $msgType === 'text' ? 'text' : 'image', $msgText, $msgId ?: null]);
+    ")->execute([$convId, in_array($msgType, ['text','TEXT']) ? 'text' : 'image', $msgText, $msgId ?: null]);
 
-    // LINE notification — atomic cooldown 3 นาที
+    // LINE notification — atomic 3 min cooldown
     $claim = $pdo->prepare("
-        UPDATE conversations
-        SET line_notified_at = NOW()
-        WHERE id = ?
-          AND (line_notified_at IS NULL OR line_notified_at < NOW() - INTERVAL 3 MINUTE)
+        UPDATE conversations SET line_notified_at=NOW()
+        WHERE id=? AND (line_notified_at IS NULL OR line_notified_at < NOW() - INTERVAL 3 MINUTE)
     ");
     $claim->execute([$convId]);
     if ($claim->rowCount() > 0) {
-        $notifyMsg = "🔔 มีลูกค้าทักใหม่!\n"
-            . "📲 TikTok [{$acc['name']}]\n"
-            . "⏰ " . date('d/m/Y H:i') . " น.\n"
-            . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
-        sendLineNotify($notifyMsg);
+        sendLineNotify("🔔 มีลูกค้าทักใหม่!\n📲 TikTok [{$acc['name']}]\n⏰ " . date('d/m/Y H:i') . " น.\n👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}");
     }
 
     echo json_encode(['ok' => true, 'conv_id' => $convId]);
@@ -136,29 +146,14 @@ if ($eventType === 7) {
 if ($eventType === 1) {
     $orderId     = $data['order_id']     ?? '';
     $orderStatus = $data['order_status'] ?? '';
-    $buyerName   = $data['buyer_name']   ?? 'ลูกค้า TikTok';
+    $buyerName   = $data['buyer_name']   ?? ($data['recipient_address']['name'] ?? 'ลูกค้า TikTok');
 
-    if ($orderId && in_array($orderStatus, ['AWAITING_SHIPMENT', 'ON_HOLD'])) {
-        $lineMsg = "🛍️ ออเดอร์ใหม่ TikTok!\n"
-            . "#{$orderId}\n"
-            . "👤 {$buyerName}\n"
-            . "⏰ " . date('d/m/Y H:i') . " น.\n"
-            . "👉 " . SITE_URL . "/pages/orders.php";
-        sendLineNotify($lineMsg);
+    if ($orderId && in_array($orderStatus, ['AWAITING_SHIPMENT', 'UNPAID', 'ON_HOLD'])) {
+        sendLineNotify("🛍️ ออเดอร์ใหม่ TikTok!\n#{$orderId}\n👤 {$buyerName}\n⏰ " . date('d/m/Y H:i') . " น.\n👉 " . SITE_URL . "/pages/orders.php");
     }
 
     echo json_encode(['ok' => true]);
     exit;
-}
-
-// ── Verification challenge (GET) ──────────────────────────────────
-// TikTok ส่ง GET เพื่อ verify webhook URL
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $challenge = $_GET['challenge'] ?? '';
-    if ($challenge) {
-        echo json_encode(['challenge' => $challenge]);
-        exit;
-    }
 }
 
 echo json_encode(['ok' => true]);
