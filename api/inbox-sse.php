@@ -1,19 +1,21 @@
 <?php
 /**
- * BabyKawaii — Inbox Server-Sent Events
- * รับ notifications แบบ real-time เมื่อมีข้อความใหม่
- * GET params: conv_id, since_id
+ * BabyKawaii — Inbox Server-Sent Events (v2 — instant push)
+ * ─────────────────────────────────────────────────────────
+ * ส่งข้อมูลข้อความจริงมาทันที ไม่ต้อง client fetch รอบสอง
+ * GET: conv_id, since_id
  */
 require_once __DIR__ . '/../config/database.php';
 requireLogin();
 
+set_time_limit(0);       // ไม่ให้ PHP หมดเวลา
+ignore_user_abort(false);
+
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
 header('Connection: keep-alive');
-header('X-Accel-Buffering: no');  // Nginx: ห้าม buffer
-header('Access-Control-Allow-Origin: *');
+header('X-Accel-Buffering: no'); // Nginx: ห้าม buffer
 
-// ปิด output buffering ทั้งหมด
 while (ob_get_level()) ob_end_clean();
 
 $convId  = (int)($_GET['conv_id']  ?? 0);
@@ -27,41 +29,44 @@ if (!$convId) {
 
 $pdo   = getDB();
 $start = time();
-$limit = 25; // วินาที — client จะ reconnect อัตโนมัติ
+$tick  = 0;
 
-function sseFlush(string $data, string $event = 'message'): void {
-    echo "event: {$event}\n";
-    echo "data: {$data}\n\n";
-    flush();
-}
+// Heartbeat เริ่มต้น
+echo "event: ping\ndata: {}\n\n";
+flush();
 
-// Heartbeat ตอนต้น
-sseFlush('{}', 'ping');
+while (!connection_aborted() && (time() - $start) < 28) {
 
-while (!connection_aborted() && (time() - $start) < $limit) {
-    // ตรวจสอบข้อความใหม่
     $stmt = $pdo->prepare("
-        SELECT MAX(id) AS max_id, COUNT(*) AS cnt
-        FROM messages
-        WHERE conversation_id = ? AND id > ?
+        SELECT m.id, m.direction, m.message_type, m.content,
+               m.media_url, m.sent_at, m.is_read,
+               u.full_name AS sender_name
+        FROM   messages m
+        LEFT JOIN admin_users u ON u.id = m.sent_by
+        WHERE  m.conversation_id = ? AND m.id > ?
+        ORDER  BY m.id ASC
+        LIMIT  20
     ");
     $stmt->execute([$convId, $sinceId]);
-    $row = $stmt->fetch();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ((int)$row['cnt'] > 0) {
-        $sinceId = (int)$row['max_id'];
-        sseFlush(json_encode([
-            'new_count' => (int)$row['cnt'],
-            'max_id'    => $sinceId,
-        ]), 'new_message');
-    } else {
-        // Keepalive ทุก 5 รอบ (2.5 วินาที)
-        static $tick = 0;
-        if (++$tick % 5 === 0) sseFlush('{}', 'ping');
+    foreach ($rows as $row) {
+        $sinceId = max($sinceId, (int)$row['id']);
+        echo "event: msg\n";
+        echo "data: " . json_encode($row, JSON_UNESCAPED_UNICODE) . "\n\n";
     }
 
-    usleep(500000); // ตรวจทุก 0.5 วินาที
+    if (!empty($rows)) flush();
+
+    // Keepalive ทุก 25 รอบ (~5 วินาที) เพื่อไม่ให้ connection หมดอายุ
+    if (++$tick % 25 === 0) {
+        echo "event: ping\ndata: {}\n\n";
+        flush();
+    }
+
+    usleep(200000); // ตรวจ DB ทุก 0.2 วินาที
 }
 
-// บอก client ให้ reconnect
-sseFlush('{}', 'close');
+// บอก client reconnect
+echo "event: close\ndata: {}\n\n";
+flush();

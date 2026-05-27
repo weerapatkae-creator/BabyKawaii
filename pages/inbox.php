@@ -601,23 +601,30 @@ function connectSSE(convId) {
     if (evtSource) { evtSource.close(); evtSource = null; }
 
     const url = `${SITE_URL}/api/inbox-sse.php?conv_id=${convId}&since_id=${lastMsgId}`;
-    evtSource = new EventSource(url);
+    evtSource  = new EventSource(url);
 
-    evtSource.addEventListener('new_message', () => {
-        pollMessages(convId);   // ดึงข้อความจริงมาแสดง
+    // รับข้อความจริงจาก SSE โดยตรง — ไม่ต้อง fetch รอบสอง
+    evtSource.addEventListener('msg', (e) => {
+        const m  = JSON.parse(e.data);
+        const id = parseInt(m.id) || 0;
+        if (id <= lastMsgId) return;          // กัน duplicate
+        lastMsgId = id;
+        const el  = document.getElementById('chatMessages');
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        el.insertAdjacentHTML('beforeend', renderMsg(m));
+        if (atBottom) el.scrollTop = el.scrollHeight;
     });
 
     evtSource.addEventListener('close', () => {
         evtSource.close();
-        setTimeout(() => connectSSE(convId), 500); // reconnect ทันที
+        setTimeout(() => connectSSE(convId), 300);
     });
 
     evtSource.onerror = () => {
         evtSource.close();
         evtSource = null;
-        // SSE ล้มเหลว → fallback polling ทุก 2 วินาที
         setLiveDot('yellow');
-        startPolling(convId);
+        startPolling(convId);   // fallback
     };
 }
 
@@ -690,13 +697,20 @@ function sendReply() {
     .then(r => r.json())
     .then(res => {
         btn.disabled = false;
+        const tmp = document.getElementById(tmpId);
         if (res.ok) {
-            const tmp = document.getElementById(tmpId);
+            // ลบ optimistic message — SSE จะส่งข้อความจริงมาเองใน ~0.2 วินาที
             if (tmp) tmp.remove();
-            pollMessages(CONV_ID); // refresh immediately
+        } else {
+            // ส่งไม่สำเร็จ — แสดง error บน optimistic bubble
+            if (tmp) tmp.querySelector('.msg-time').textContent = '❌ ส่งไม่ได้';
         }
     })
-    .catch(() => { btn.disabled = false; });
+    .catch(() => {
+        btn.disabled = false;
+        const tmp = document.getElementById(tmpId);
+        if (tmp) tmp.querySelector('.msg-time').textContent = '❌ ไม่มีการเชื่อมต่อ';
+    });
 }
 
 /* ── Set status ─────────────────────────────────────────────────── */
