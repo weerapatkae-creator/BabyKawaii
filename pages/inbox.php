@@ -86,15 +86,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         exit;
     }
 
-    // Save quick reply
+    // Save quick reply — คืน id ด้วยเสมอ (ใช้ refresh chips)
     if ($_POST['ajax'] === 'save_qr') {
         $id = (int)($_POST['id'] ?? 0);
         if ($id) {
             $pdo->prepare("UPDATE quick_replies SET label=?,content=? WHERE id=?")->execute([trim($_POST['label']),trim($_POST['content']),$id]);
         } else {
             $pdo->prepare("INSERT INTO quick_replies (label,content) VALUES (?,?)")->execute([trim($_POST['label']),trim($_POST['content'])]);
+            $id = (int)$pdo->lastInsertId();
         }
-        echo json_encode(['ok'=>true]);
+        echo json_encode(['ok'=>true, 'id'=>$id]);
         exit;
     }
 
@@ -102,6 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     if ($_POST['ajax'] === 'delete_qr') {
         $pdo->prepare("DELETE FROM quick_replies WHERE id=?")->execute([(int)$_POST['id']]);
         echo json_encode(['ok'=>true]);
+        exit;
+    }
+
+    // Get all quick replies (ใช้ refresh chips หลัง save/delete)
+    if ($_POST['ajax'] === 'get_qr') {
+        $rows = $pdo->query("SELECT id,label,content FROM quick_replies WHERE is_active=1 ORDER BY sort_order,id")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode($rows);
         exit;
     }
 
@@ -585,7 +593,7 @@ function renderMsg(m) {
         bubbleContent = esc(m.content);
     }
 
-    return `<div class="msg-row ${dir}">
+    return `<div class="msg-row ${dir}" data-msg-id="${parseInt(m.id)||''}">
         ${dir === 'inbound' ? avatar : ''}
         <div class="msg-content">
             <div class="msg-bubble">${bubbleContent}</div>
@@ -644,8 +652,14 @@ function pollMessages(convId) {
         const atB = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         let hasInbound = false;
         msgs.forEach(m => {
+            const mid = parseInt(m.id) || 0;
+            // ข้ามถ้า message นี้มีใน DOM แล้ว (optimistic bubble ที่ถูก mark ไว้)
+            if (mid && el.querySelector(`[data-msg-id="${mid}"]`)) {
+                lastMsgId = Math.max(lastMsgId, mid);
+                return;
+            }
             el.insertAdjacentHTML('beforeend', renderMsg(m));
-            lastMsgId = Math.max(lastMsgId, parseInt(m.id)||0);
+            lastMsgId = Math.max(lastMsgId, mid);
             if (m.direction === 'inbound') hasInbound = true;
         });
         if (atB) el.scrollTop = el.scrollHeight;
@@ -695,10 +709,11 @@ function sendReply() {
         btn.disabled = false;
         const tmp = document.getElementById(tmpId);
         if (res.ok) {
-            // อัปเดต lastMsgId ทันที → polling จะข้ามข้อความนี้ ไม่มี duplicate
-            if (res.msg_id) lastMsgId = Math.max(lastMsgId, parseInt(res.msg_id));
-            // อัปเดต time label ของ optimistic bubble — ไม่ลบ ไม่มี flash
+            const mid = parseInt(res.msg_id) || 0;
+            if (mid) lastMsgId = Math.max(lastMsgId, mid);
             if (tmp) {
+                // ใส่ data-msg-id ก่อน → pollMessages จะ skip ข้อความนี้ (กัน duplicate)
+                if (mid) tmp.setAttribute('data-msg-id', mid);
                 tmp.querySelector('.msg-time').textContent = res.sent_at || now;
                 tmp.removeAttribute('id');
             }
@@ -745,14 +760,19 @@ function addQRRow() {
 }
 
 function saveQR(btn) {
-    const row = btn.closest('.qr-row');
+    const row     = btn.closest('.qr-row');
     const label   = row.querySelector('.qr-label').value.trim();
     const content = row.querySelector('.qr-content').value.trim();
     if (!label || !content) { btn.textContent='⚠️'; setTimeout(()=>btn.textContent='💾',1200); return; }
     fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body: new URLSearchParams({ajax:'save_qr', id: row.dataset.id||0, label, content})
     }).then(r=>r.json()).then(res => {
-        if (res.ok) { btn.textContent='✅'; setTimeout(()=>btn.textContent='💾',1500); }
+        if (res.ok) {
+            if (res.id) row.dataset.id = res.id;  // อัปเดต id สำหรับแถวใหม่
+            btn.textContent = '✅';
+            setTimeout(() => btn.textContent = '💾', 1500);
+            refreshQRChips(); // ← อัปเดต chips ทันที
+        }
     });
 }
 
@@ -763,9 +783,26 @@ function deleteQR(btn) {
     if (id && id !== '0') {
         fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
             body: new URLSearchParams({ajax:'delete_qr', id})
-        });
+        }).then(() => refreshQRChips()); // ← อัปเดต chips หลังลบ
     }
     row.remove();
+}
+
+/* ── Refresh QR chips ใน reply box ─────────────────────────────── */
+function refreshQRChips() {
+    fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'get_qr'})
+    })
+    .then(r => r.json())
+    .then(qrs => {
+        const chips = document.getElementById('qrChips');
+        if (!chips) return;
+        if (!qrs.length) { chips.innerHTML = ''; return; }
+        chips.innerHTML = qrs.map(q =>
+            `<span class="qr-chip" onclick="useQR(${JSON.stringify(q.content)})">${esc(q.label)}</span>`
+        ).join('');
+    })
+    .catch(() => {});
 }
 
 /* ── Filter convs (client-side) ────────────────────────────────── */
