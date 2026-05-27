@@ -528,7 +528,6 @@ const CUSTOMER_AVATAR  = <?= json_encode($activeConv['customer_avatar'] ?? '') ?
 const CUSTOMER_INITIAL = <?= json_encode(mb_substr($activeConv['customer_name'] ?? '?', 0, 1)) ?>;
 let   lastMsgId  = 0;
 let   pollTimer  = null;
-let   evtSource  = null;
 
 /* ── HTML escaping ──────────────────────────────────────────────── */
 function esc(s) {
@@ -591,47 +590,16 @@ function loadMessages(convId) {
     });
 }
 
-/* ── Real-time: SSE + fallback polling ─────────────────────────── */
+/* ── Real-time: polling 1 วินาที ──────────────────────────────── */
+// SSE ถูกถอดออกเพราะมัน hold PHP-FPM worker ทำให้ webhook ช้า
+// polling 1 วินาทีใช้ worker แค่ ~20ms ต่อรอบ ไม่ block อะไร
 function startRealtime(convId) {
-    if (typeof EventSource === 'undefined') { startPolling(convId); return; }
-    connectSSE(convId);
+    startPolling(convId);
 }
 
-function connectSSE(convId) {
-    if (evtSource) { evtSource.close(); evtSource = null; }
-
-    const url = `${SITE_URL}/api/inbox-sse.php?conv_id=${convId}&since_id=${lastMsgId}`;
-    evtSource  = new EventSource(url);
-
-    // รับข้อความจริงจาก SSE โดยตรง — ไม่ต้อง fetch รอบสอง
-    evtSource.addEventListener('msg', (e) => {
-        const m  = JSON.parse(e.data);
-        const id = parseInt(m.id) || 0;
-        if (id <= lastMsgId) return;          // กัน duplicate
-        lastMsgId = id;
-        const el  = document.getElementById('chatMessages');
-        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        el.insertAdjacentHTML('beforeend', renderMsg(m));
-        if (atBottom) el.scrollTop = el.scrollHeight;
-    });
-
-    evtSource.addEventListener('close', () => {
-        evtSource.close();
-        setTimeout(() => connectSSE(convId), 300);
-    });
-
-    evtSource.onerror = () => {
-        evtSource.close();
-        evtSource = null;
-        setLiveDot('yellow');
-        startPolling(convId);   // fallback
-    };
-}
-
-/* ── Fallback polling ──────────────────────────────────────────── */
 function startPolling(convId) {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(() => pollMessages(convId), 2000);
+    pollTimer = setInterval(() => pollMessages(convId), 1000);
 }
 
 function pollMessages(convId) {
@@ -652,13 +620,6 @@ function pollMessages(convId) {
     .catch(() => {});
 }
 
-/* ── Live dot color ─────────────────────────────────────────────── */
-function setLiveDot(color) {
-    const dot = document.getElementById('liveDot');
-    if (!dot) return;
-    const colors = { green:'#22c55e', yellow:'#f59e0b', red:'#ef4444' };
-    dot.style.background = colors[color] || color;
-}
 
 /* ── Open conversation ─────────────────────────────────────────── */
 function openConv(id) {
