@@ -108,7 +108,9 @@ if ($conv) {
     $pdo->prepare(
         "UPDATE conversations
          SET customer_name=?, customer_avatar=?, last_message=?, last_message_at=NOW(),
-             unread_count=unread_count+1, status='open', updated_at=NOW(),
+             unread_count=unread_count+1,
+             status=IF(status='closed','open',status),
+             updated_at=NOW(),
              platform_account_name=?
          WHERE id=?"
     )->execute([$customerName, $customerAvatar, $message, $platformAccountName, $convId]);
@@ -137,23 +139,21 @@ $pdo->prepare(
      VALUES (?,?,?,?,?,NOW(),?)"
 )->execute([$convId, 'inbound', $message, $messageType, $mediaUrl, $platformMsgId]);
 
-// ── LINE Notify admin ─────────────────────────────────────────────
-$platform = $pdo->prepare("SELECT name, icon FROM platforms WHERE id=?");
-$platform->execute([$platformId]);
-$platform    = $platform->fetch();
-$platformStr = $platform ? "{$platform['icon']} {$platform['name']}" : 'ไม่ระบุ';
-$accountStr  = $platformAccountName ? " [{$platformAccountName}]" : '';
+// ── LINE Notify admin — แจ้งครั้งเดียวต่อ "กระทู้ใหม่" ──────────
+$wasUnread = $conv && (int)$conv['unread_count'] > 0;
+if (!$wasUnread) {
+    $platform = $pdo->prepare("SELECT name, icon FROM platforms WHERE id=?");
+    $platform->execute([$platformId]);
+    $platform    = $platform->fetch();
+    $platformStr = $platform ? "{$platform['icon']} {$platform['name']}" : 'ไม่ระบุ';
+    $accountStr  = $platformAccountName ? " [{$platformAccountName}]" : '';
 
-$notifyMsg = "💬 ข้อความใหม่จากลูกค้า!\n"
-    . "👤 {$customerName}\n"
-    . "📲 {$platformStr}{$accountStr}\n"
-    . "─────────────────\n"
-    . mb_substr($message, 0, 100) . (mb_strlen($message) > 100 ? '…' : '') . "\n"
-    . "─────────────────\n"
-    . "⏰ " . date('d/m/Y H:i') . " น.\n"
-    . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
-
-sendLineNotify($notifyMsg);
+    $notifyMsg = "🔔 มีลูกค้าทักใหม่!\n"
+        . "📲 {$platformStr}{$accountStr}\n"
+        . "⏰ " . date('d/m/Y H:i') . " น.\n"
+        . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
+    sendLineNotify($notifyMsg);
+}
 
 echo json_encode([
     'ok'                  => true,

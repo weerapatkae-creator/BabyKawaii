@@ -137,15 +137,27 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
                      string $senderUid, ?string $senderName, ?string $senderAvatar,
                      string $text, string $msgType, ?string $mediaUrl, string $msgId): void
 {
-    // Upsert conversation
+    // เช็คสถานะเดิมก่อน upsert
+    $existing = $pdo->prepare("
+        SELECT id, unread_count, status
+        FROM conversations
+        WHERE platform_id=? AND platform_account_id=? AND customer_uid=?
+        LIMIT 1
+    ");
+    $existing->execute([$platformId, $accountId, $senderUid]);
+    $existingRow  = $existing->fetch();
+    $wasUnread    = $existingRow && (int)$existingRow['unread_count'] > 0;
+
+    // Upsert conversation — เปิดใหม่ถ้าปิดไปแล้ว
     $pdo->prepare("
         INSERT INTO conversations
-            (platform_id, platform_account_id, platform_account_name, customer_uid, customer_name, customer_avatar, last_message, last_message_at, unread_count)
-        VALUES (?,?,?,?,?,?,?,NOW(),1)
+            (platform_id, platform_account_id, platform_account_name, customer_uid, customer_name, customer_avatar, last_message, last_message_at, unread_count, status)
+        VALUES (?,?,?,?,?,?,?,NOW(),1,'open')
         ON DUPLICATE KEY UPDATE
             last_message    = VALUES(last_message),
             last_message_at = NOW(),
             unread_count    = unread_count + 1,
+            status          = IF(status = 'closed', 'open', status),
             customer_name   = COALESCE(NULLIF(VALUES(customer_name),''), customer_name),
             customer_avatar = COALESCE(NULLIF(VALUES(customer_avatar),''), customer_avatar)
     ")->execute([$platformId, $accountId, $accountName, $senderUid, $senderName ?? '', $senderAvatar ?? '', $text]);
@@ -167,17 +179,14 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
         VALUES (?, 'inbound', ?, ?, ?, ?, NOW())
     ")->execute([$convId, $msgType, $text, $mediaUrl, $msgId ?: null]);
 
-    // LINE notification
-    $preview = mb_strlen($text) > 80 ? mb_substr($text, 0, 80) . '…' : $text;
-    $notifyMsg = "💬 ข้อความใหม่จากลูกค้า!\n"
-        . "👤 " . ($senderName ?: 'ไม่ระบุ') . "\n"
-        . "📲 [{$accountName}]\n"
-        . "─────────────────\n"
-        . "{$preview}\n"
-        . "─────────────────\n"
-        . "⏰ " . date('d/m/Y H:i') . " น.\n"
-        . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
-    sendLineNotify($notifyMsg);
+    // LINE notification — แจ้งครั้งเดียวต่อ "กระทู้ใหม่" (ตอน unread=0 → 1)
+    if (!$wasUnread) {
+        $notifyMsg = "🔔 มีลูกค้าทักใหม่!\n"
+            . "📲 [{$accountName}]\n"
+            . "⏰ " . date('d/m/Y H:i') . " น.\n"
+            . "👉 " . SITE_URL . "/pages/inbox.php?conv={$convId}";
+        sendLineNotify($notifyMsg);
+    }
 }
 
 // ── fetchFbProfile() และ sendFbMessage() อยู่ใน includes/meta-api.php ──
