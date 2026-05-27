@@ -135,10 +135,18 @@ $activeConvId   = (int)($_GET['conv'] ?? 0);
 
 $where  = ['1=1'];
 $params = [];
-if ($statusFilter !== 'all') { $where[] = 'c.status = ?'; $params[] = $statusFilter; }
-if ($platformFilter)         { $where[] = 'c.platform_id = ?'; $params[] = $platformFilter; }
-if ($accountFilter)          { $where[] = 'c.platform_account_id = ?'; $params[] = $accountFilter; }
-if ($search)                 { $where[] = '(c.customer_name LIKE ? OR c.last_message LIKE ?)'; $params[] = "%$search%"; $params[] = "%$search%"; }
+if ($statusFilter === 'new') {
+    $where[] = 'c.unread_count > 0';
+    $where[] = "c.status != 'closed'";
+} elseif ($statusFilter === 'open') {
+    $where[] = "c.status IN ('open','pending')";
+} elseif ($statusFilter === 'closed') {
+    $where[] = "c.status = 'closed'";
+}
+// 'all' → ไม่ filter status
+if ($platformFilter) { $where[] = 'c.platform_id = ?'; $params[] = $platformFilter; }
+if ($accountFilter)  { $where[] = 'c.platform_account_id = ?'; $params[] = $accountFilter; }
+if ($search)         { $where[] = '(c.customer_name LIKE ? OR c.last_message LIKE ?)'; $params[] = "%$search%"; $params[] = "%$search%"; }
 
 try {
     $convStmt = $pdo->prepare(
@@ -167,10 +175,10 @@ try {
     )->fetchAll();
 
     $stats = $pdo->query("SELECT
-        SUM(status='open')    AS open_count,
-        SUM(status='pending') AS pending_count,
-        SUM(status='closed')  AS closed_count,
-        SUM(unread_count > 0) AS unread_convs
+        SUM(status='open' OR status='pending')           AS open_count,
+        SUM(status='closed')                             AS closed_count,
+        SUM(unread_count > 0 AND status != 'closed')     AS new_count,
+        COALESCE(SUM(unread_count),0)                    AS total_unread
         FROM conversations")->fetch();
 
     $activeConv = null;
@@ -287,12 +295,12 @@ try {
     <div class="d-flex gap-2 px-3 pt-3 pb-2 flex-wrap align-items-center">
         <h1 class="page-title mb-0">💬 Inbox</h1>
         <div class="d-flex gap-2 ms-auto flex-wrap align-items-center">
-            <span class="badge bg-success">🟢 เปิด <?= $stats['open_count'] ?? 0 ?></span>
-            <span class="badge bg-warning text-dark">⏳ รอ <?= $stats['pending_count'] ?? 0 ?></span>
-            <span class="badge bg-secondary">🔒 ปิด <?= $stats['closed_count'] ?? 0 ?></span>
-            <?php if (($stats['unread_convs'] ?? 0) > 0): ?>
-            <span class="badge bg-danger">🔔 ยังไม่ได้อ่าน <?= $stats['unread_convs'] ?></span>
+            <?php if (($stats['new_count'] ?? 0) > 0): ?>
+            <span class="badge bg-danger" id="globalNewBadge">💬 ใหม่ <?= $stats['new_count'] ?></span>
+            <?php else: ?>
+            <span class="badge bg-danger d-none" id="globalNewBadge">💬 ใหม่ 0</span>
             <?php endif; ?>
+            <span class="badge bg-success" id="globalOpenBadge">🟢 เปิด <?= $stats['open_count'] ?? 0 ?></span>
             <button class="btn btn-sm btn-outline-secondary" onclick="openQrManager()">⚡ ข้อความสำเร็จรูป</button>
         </div>
     </div>
@@ -328,15 +336,17 @@ try {
             <div class="status-tabs">
                 <?php
                 $tabCounts = [
-                    'open'    => $stats['open_count']    ?? 0,
-                    'pending' => $stats['pending_count'] ?? 0,
-                    'closed'  => $stats['closed_count']  ?? 0,
-                    'all'     => ($stats['open_count']??0)+($stats['pending_count']??0)+($stats['closed_count']??0),
+                    'new'    => $stats['new_count']    ?? 0,
+                    'open'   => $stats['open_count']   ?? 0,
+                    'closed' => $stats['closed_count'] ?? 0,
+                    'all'    => ($stats['open_count']??0)+($stats['closed_count']??0),
                 ];
-                foreach (['open'=>'เปิด','pending'=>'รอตอบ','closed'=>'ปิด','all'=>'ทั้งหมด'] as $s => $label): ?>
-                <a href="?status=<?= $s ?><?= $platformFilter?'&platform='.$platformFilter:'' ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
-                   class="status-tab <?= $statusFilter===$s?'active':'' ?>">
-                    <?= $label ?><span class="tab-count"><?= $tabCounts[$s] ?></span>
+                $tabLabels = ['new'=>'💬 ใหม่','open'=>'🟢 เปิด','closed'=>'🔒 จบแล้ว','all'=>'ทั้งหมด'];
+                foreach ($tabLabels as $s => $label): ?>
+                <a href="?status=<?= $s ?><?= $accountFilter?'&account='.$accountFilter:'' ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
+                   class="status-tab <?= $statusFilter===$s?'active':'' ?>"
+                   id="tab_<?= $s ?>">
+                    <?= $label ?><span class="tab-count" id="tabCount_<?= $s ?>"><?= $tabCounts[$s] ?></span>
                 </a>
                 <?php endforeach; ?>
             </div>
@@ -436,9 +446,8 @@ try {
                 </div>
                 <div class="d-flex gap-2 align-items-center flex-shrink-0">
                     <select class="form-select form-select-sm" style="width:auto;font-size:0.78rem;" onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
-                        <option value="open"    <?= $activeConv['status']==='open'?'selected':'' ?>>🟢 เปิด</option>
-                        <option value="pending" <?= $activeConv['status']==='pending'?'selected':'' ?>>⏳ รอตอบ</option>
-                        <option value="closed"  <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 ปิด</option>
+                        <option value="open"   <?= in_array($activeConv['status'],['open','pending'])?'selected':'' ?>>🟢 กำลังคุย</option>
+                        <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
                     </select>
                     <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
                        class="btn btn-sm btn-outline-primary" title="ดูออเดอร์">
@@ -780,30 +789,106 @@ function toggleList() {
     document.getElementById('inboxList').classList.toggle('hide-mobile');
 }
 
-/* ── Refresh sidebar conv list periodically ─────────────────────── */
-let sidebarTimer = null;
-function startSidebarRefresh() {
-    // Light refresh every 15s — reload just the unread badge counts
-    sidebarTimer = setInterval(() => {
-        fetch('?ajax_badge=1')
-            .then(r => r.json())
-            .then(data => {
-                // Update tab count badges if changed
-                document.querySelectorAll('.status-tab').forEach(tab => {
-                    const href = tab.getAttribute('href') || '';
-                    if (href.includes('status=open')) {
-                        const badge = tab.querySelector('.tab-count');
-                        if (badge) badge.textContent = data.open || badge.textContent;
-                    }
-                });
-            })
-            .catch(()=>{});
-    }, 15000);
+/* ── Global Notify: real-time sound + badge + conv list ─────────── */
+let globalLastId  = 0;
+let globalTimer   = null;
+let notifyReady   = false; // ป้องกัน sound ตอน init
+
+function startGlobalNotify() {
+    // รอ 1 วินาทีก่อนเริ่ม เพื่อให้ init เสร็จก่อน
+    setTimeout(() => {
+        notifyReady = true;
+        globalTimer = setInterval(globalPoll, 1500);
+    }, 1000);
+}
+
+function globalPoll() {
+    fetch(`${SITE_URL}/api/inbox-notify.php?last_id=${globalLastId}`)
+    .then(r => r.json())
+    .then(data => {
+        // เล่นเสียง + flash tab title เมื่อมีข้อความใหม่
+        if (notifyReady && data.has_new && data.new_id > globalLastId) {
+            playNotif();
+            flashTitle();
+        }
+        if (data.new_id > globalLastId) globalLastId = data.new_id;
+
+        // อัปเดต stat badges
+        updateStatBadges(data.stats);
+
+        // อัปเดต conv list (เฉพาะ unread count + ย้าย conv ที่มีข้อความใหม่ขึ้นบน)
+        if (data.convs) updateConvList(data.convs);
+    })
+    .catch(() => {});
+}
+
+function updateStatBadges(stats) {
+    if (!stats) return;
+    const newCount  = parseInt(stats.new_count)  || 0;
+    const openCount = parseInt(stats.open_count) || 0;
+
+    // Header badges
+    const newBadge  = document.getElementById('globalNewBadge');
+    const openBadge = document.getElementById('globalOpenBadge');
+    if (newBadge)  { newBadge.textContent = `💬 ใหม่ ${newCount}`; newBadge.classList.toggle('d-none', newCount === 0); }
+    if (openBadge) openBadge.textContent = `🟢 เปิด ${openCount}`;
+
+    // Tab counts
+    const map = { new: stats.new_count, open: stats.open_count, closed: stats.closed_count };
+    Object.entries(map).forEach(([k, v]) => {
+        const el = document.getElementById(`tabCount_${k}`);
+        if (el) el.textContent = v ?? 0;
+    });
+
+    // Browser tab title
+    const total = parseInt(stats.total_unread) || 0;
+    document.title = total > 0 ? `(${total}) Inbox — BabyKawaii` : 'Inbox — BabyKawaii';
+}
+
+function updateConvList(convs) {
+    convs.forEach(c => {
+        const item = document.querySelector(`.conv-item[data-conv="${c.id}"]`);
+        if (!item) return; // conv ไม่อยู่ใน list ที่ filter ปัจจุบัน
+
+        // อัปเดต unread badge
+        const badge = item.querySelector('.conv-badge');
+        const name  = item.querySelector('.conv-name');
+        if (parseInt(c.unread_count) > 0) {
+            item.classList.add('unread');
+            if (name) name.style.fontWeight = '700';
+            if (badge) { badge.style.display='flex'; badge.textContent = Math.min(c.unread_count,9)+(c.unread_count>9?'+':''); }
+        } else {
+            item.classList.remove('unread');
+            if (name) name.style.fontWeight = '';
+            if (badge) badge.style.display = 'none';
+        }
+
+        // อัปเดต preview text
+        const preview = item.querySelector('.conv-preview');
+        if (preview && c.last_message) preview.textContent = c.last_message.substring(0,50);
+    });
+}
+
+/* ── Flash browser tab เมื่อมีข้อความใหม่ ──────────────────────── */
+let flashTimer = null;
+function flashTitle() {
+    if (document.hasFocus()) return; // ไม่ flash ถ้าหน้าต่าง focus อยู่
+    let on = true;
+    clearInterval(flashTimer);
+    flashTimer = setInterval(() => {
+        document.title = on ? '🔔 ข้อความใหม่!' : 'Inbox — BabyKawaii';
+        on = !on;
+    }, 800);
+    // หยุด flash เมื่อ focus กลับมา
+    window.addEventListener('focus', () => {
+        clearInterval(flashTimer);
+        flashTimer = null;
+    }, { once: true });
 }
 
 // ── Init ──────────────────────────────────────────────────────────
 if (CONV_ID) loadMessages(CONV_ID);
-startSidebarRefresh();
+startGlobalNotify(); // real-time sound + badge + conv list updates
 </script>
 
 <?php
