@@ -25,7 +25,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_platform'])) {
     exit;
 }
 
-$platforms = $pdo->query("SELECT * FROM platforms ORDER BY id")->fetchAll();
+// แสดงเฉพาะแพลตฟอร์มที่มี platform_accounts เชื่อมต่ออยู่แล้ว
+$platforms = $pdo->query("
+    SELECT p.*, COUNT(pa.id) AS account_count
+    FROM   platforms p
+    INNER  JOIN platform_accounts pa ON pa.platform_id = p.id AND pa.is_active = 1
+    WHERE  p.is_active = 1
+    GROUP  BY p.id
+    ORDER  BY p.id
+")->fetchAll();
+
+// ดึงรายชื่อ accounts ของแต่ละ platform ไว้แสดงในการ์ด
+$accountsByPf = [];
+$accStmt = $pdo->query("SELECT pa.*, p.id AS pid FROM platform_accounts pa JOIN platforms p ON p.id=pa.platform_id WHERE pa.is_active=1");
+foreach ($accStmt->fetchAll() as $a) { $accountsByPf[$a['pid']][] = $a; }
 
 
 $pageTitle = 'แพลตฟอร์มขาย';
@@ -107,10 +120,12 @@ while ($row = $pfSalesStmt->fetch()) {
                     <i class="fas fa-percent"></i> ค่าคอม <?= $pf['commission_rate'] ?>%
                 </div>
                 <?php endif; ?>
-                <div class="mt-1">
-                    <span style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:12px;font-size:0.75rem;">
-                        <?= $pf['is_active'] ? '✅ ใช้งาน' : '⏸️ หยุดใช้' ?>
+                <div class="mt-2 d-flex flex-wrap gap-1">
+                    <?php foreach ($accountsByPf[$pf['id']] ?? [] as $a): ?>
+                    <span style="background:rgba(255,255,255,0.25);padding:2px 9px;border-radius:12px;font-size:0.73rem;font-weight:600;">
+                        ✅ <?= htmlspecialchars($a['name']) ?>
                     </span>
+                    <?php endforeach; ?>
                 </div>
             </div>
         </div>

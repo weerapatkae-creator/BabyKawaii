@@ -268,6 +268,14 @@ try {
 .typing-dot:nth-child(3) { animation-delay:.4s; }
 @keyframes typing { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-4px)} }
 
+/* Message entrance animation */
+@keyframes msgIn {
+    from { opacity:0; transform:translateY(8px); }
+    to   { opacity:1; transform:translateY(0); }
+}
+.msg-row    { animation: msgIn 0.18s ease-out; }
+.msg-system { animation: msgIn 0.15s ease-out; }
+
 @media(max-width:768px){
     .inbox-list { width:100%; position:absolute; z-index:5; }
     .inbox-list.hide-mobile { display:none; }
@@ -526,8 +534,33 @@ const CONV_ID          = <?= $activeConvId ?: 'null' ?>;
 const SITE_URL         = '<?= SITE_URL ?>';
 const CUSTOMER_AVATAR  = <?= json_encode($activeConv['customer_avatar'] ?? '') ?>;
 const CUSTOMER_INITIAL = <?= json_encode(mb_substr($activeConv['customer_name'] ?? '?', 0, 1)) ?>;
-let   lastMsgId  = 0;
-let   pollTimer  = null;
+let   lastMsgId       = 0;
+let   pollTimer       = null;
+let   initialLoadDone = false;  // กัน sound ตอน load ครั้งแรก
+
+/* ── Notification sound (Web Audio API — ไม่ต้องใช้ไฟล์เสียง) ──── */
+let _audioCtx = null;
+function playNotif() {
+    try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = _audioCtx;
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(820, ctx.currentTime);
+        osc.frequency.setValueAtTime(1060, ctx.currentTime + 0.08);
+        g.gain.setValueAtTime(0.18, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.38);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.38);
+    } catch(e) {}
+}
+// Unlock AudioContext บน mobile (ต้อง user gesture ก่อน)
+document.addEventListener('click', () => {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+}, { once: true });
 
 /* ── HTML escaping ──────────────────────────────────────────────── */
 function esc(s) {
@@ -581,6 +614,7 @@ function loadMessages(convId) {
             lastMsgId = msgs.reduce((max, m) => Math.max(max, m.id||0), 0);
             el.scrollTop = el.scrollHeight;
         }
+        initialLoadDone = true;   // เริ่ม play sound ได้แล้วหลัง load
         startRealtime(convId);
     })
     .catch(() => {
@@ -609,13 +643,17 @@ function pollMessages(convId) {
     .then(r => r.json())
     .then(msgs => {
         if (!msgs.length) return;
-        const el = document.getElementById('chatMessages');
-        const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        const el  = document.getElementById('chatMessages');
+        const atB = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        let hasInbound = false;
         msgs.forEach(m => {
             el.insertAdjacentHTML('beforeend', renderMsg(m));
-            lastMsgId = Math.max(lastMsgId, m.id||0);
+            lastMsgId = Math.max(lastMsgId, parseInt(m.id)||0);
+            if (m.direction === 'inbound') hasInbound = true;
         });
-        if (wasAtBottom) el.scrollTop = el.scrollHeight;
+        if (atB) el.scrollTop = el.scrollHeight;
+        // เล่น sound เมื่อมีข้อความจากลูกค้า (ไม่เล่นตอน initial load)
+        if (hasInbound && initialLoadDone) playNotif();
     })
     .catch(() => {});
 }
@@ -660,10 +698,14 @@ function sendReply() {
         btn.disabled = false;
         const tmp = document.getElementById(tmpId);
         if (res.ok) {
-            // ลบ optimistic message — SSE จะส่งข้อความจริงมาเองใน ~0.2 วินาที
-            if (tmp) tmp.remove();
+            // อัปเดต lastMsgId ทันที → polling จะข้ามข้อความนี้ ไม่มี duplicate
+            if (res.msg_id) lastMsgId = Math.max(lastMsgId, parseInt(res.msg_id));
+            // อัปเดต time label ของ optimistic bubble — ไม่ลบ ไม่มี flash
+            if (tmp) {
+                tmp.querySelector('.msg-time').textContent = res.sent_at || now;
+                tmp.removeAttribute('id');
+            }
         } else {
-            // ส่งไม่สำเร็จ — แสดง error บน optimistic bubble
             if (tmp) tmp.querySelector('.msg-time').textContent = '❌ ส่งไม่ได้';
         }
     })
