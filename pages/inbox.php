@@ -226,14 +226,21 @@ try {
 .chat-messages { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:8px; }
 .msg-row { display:flex; gap:7px; align-items:flex-end; }
 .msg-row.outbound { flex-direction:row-reverse; }
-.msg-bubble { max-width:65%; padding:8px 12px; border-radius:14px; font-size:0.83rem; line-height:1.5; word-break:break-word; }
+/* msg-content คือ wrapper ที่กำหนด max-width แทนการกำหนดใน msg-bubble */
+.msg-content { max-width:65%; }
+.msg-row.outbound .msg-content { align-items:flex-end; display:flex; flex-direction:column; }
+.msg-bubble { padding:8px 12px; border-radius:14px; font-size:0.83rem; line-height:1.5; word-break:break-word; }
 .msg-row.inbound  .msg-bubble { background:#fff; border:1px solid #eee; border-bottom-left-radius:3px; }
 .msg-row.outbound .msg-bubble { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border-bottom-right-radius:3px; }
 .msg-time { font-size:0.63rem; color:#bbb; margin-top:3px; display:block; }
-.msg-row.outbound .msg-time { text-align:right; color:rgba(255,255,255,0.75); }
+.msg-row.outbound .msg-time { text-align:right; color:#bbb; }
 .msg-system { text-align:center; font-size:0.71rem; color:#bbb; padding:3px 0; font-style:italic; }
-.msg-avatar { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,#FF85A2,#9B72CF); color:#fff; display:flex; align-items:center; justify-content:center; font-size:0.66rem; font-weight:700; flex-shrink:0; }
+.msg-avatar { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,#FF85A2,#9B72CF); color:#fff; display:flex; align-items:center; justify-content:center; font-size:0.66rem; font-weight:700; flex-shrink:0; overflow:hidden; }
+.msg-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 .msg-img { max-width:200px; border-radius:10px; cursor:pointer; }
+/* Live indicator */
+.live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#22c55e; animation:livePulse 1.5s infinite; margin-right:3px; vertical-align:middle; }
+@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
 
 /* Reply box */
 .chat-reply { background:#fff; border-top:1px solid var(--border-color); padding:10px 14px; }
@@ -357,8 +364,12 @@ try {
                      data-conv="<?= $conv['id'] ?>"
                      onclick="openConv(<?= $conv['id'] ?>)">
                     <div class="conv-avatar"
-                         style="<?= $conv['platform_color'] ? 'background:linear-gradient(135deg,'.$conv['platform_color'].','.adjustColor($conv['platform_color']).');' : '' ?>">
-                        <?= htmlspecialchars($initial) ?>
+                         style="<?= $conv['platform_color'] && !$conv['customer_avatar'] ? 'background:linear-gradient(135deg,'.$conv['platform_color'].','.adjustColor($conv['platform_color']).');' : '' ?>">
+                        <?php if ($conv['customer_avatar']): ?>
+                            <img src="<?= htmlspecialchars($conv['customer_avatar']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                        <?php else: ?>
+                            <?= htmlspecialchars($initial) ?>
+                        <?php endif; ?>
                     </div>
                     <div class="conv-body">
                         <div class="d-flex justify-content-between align-items-start gap-1">
@@ -397,12 +408,19 @@ try {
             <!-- Chat header -->
             <div class="chat-head">
                 <button class="btn btn-sm btn-outline-secondary d-md-none me-1" onclick="toggleList()">☰</button>
-                <div class="conv-avatar" style="width:38px;height:38px;font-size:0.9rem;
-                    <?= $activeConv['platform_color']?'background:linear-gradient(135deg,'.$activeConv['platform_color'].','.adjustColor($activeConv['platform_color']).');':'' ?>">
-                    <?= mb_substr($activeConv['customer_name'] ?: '?', 0, 1) ?>
+                <div class="conv-avatar" style="width:38px;height:38px;font-size:0.9rem;overflow:hidden;
+                    <?= $activeConv['customer_avatar'] ? '' : ($activeConv['platform_color']?'background:linear-gradient(135deg,'.$activeConv['platform_color'].','.adjustColor($activeConv['platform_color']).');':'') ?>">
+                    <?php if ($activeConv['customer_avatar']): ?>
+                        <img src="<?= htmlspecialchars($activeConv['customer_avatar']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                    <?php else: ?>
+                        <?= mb_substr($activeConv['customer_name'] ?: '?', 0, 1) ?>
+                    <?php endif; ?>
                 </div>
                 <div class="chat-head-info">
-                    <div class="chat-head-name"><?= htmlspecialchars($activeConv['customer_name'] ?: 'ไม่ระบุชื่อ') ?></div>
+                    <div class="chat-head-name">
+                        <span class="live-dot" id="liveDot" title="Real-time"></span>
+                        <?= htmlspecialchars($activeConv['customer_name'] ?: 'ไม่ระบุชื่อ') ?>
+                    </div>
                     <div class="chat-head-meta d-flex align-items-center gap-2 flex-wrap">
                         <?php if ($activeConv['platform_icon']): ?>
                         <span style="background:<?= $activeConv['platform_color'] ?>;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">
@@ -504,10 +522,13 @@ try {
 </div>
 
 <script>
-const CONV_ID   = <?= $activeConvId ?: 'null' ?>;
-const SITE_URL  = '<?= SITE_URL ?>';
-let   lastMsgId = 0;
-let   pollTimer = null;
+const CONV_ID          = <?= $activeConvId ?: 'null' ?>;
+const SITE_URL         = '<?= SITE_URL ?>';
+const CUSTOMER_AVATAR  = <?= json_encode($activeConv['customer_avatar'] ?? '') ?>;
+const CUSTOMER_INITIAL = <?= json_encode(mb_substr($activeConv['customer_name'] ?? '?', 0, 1)) ?>;
+let   lastMsgId  = 0;
+let   pollTimer  = null;
+let   evtSource  = null;
 
 /* ── HTML escaping ──────────────────────────────────────────────── */
 function esc(s) {
@@ -517,15 +538,19 @@ function esc(s) {
 /* ── Render a single message row ───────────────────────────────── */
 function renderMsg(m) {
     if (m.message_type === 'system') return `<div class="msg-system">${esc(m.content)}</div>`;
-    const dir    = m.direction;
-    const time   = (m.sent_at || '').substring(11, 16);
+    const dir  = m.direction;
+    const time = (m.sent_at || m.created_at || '').substring(11, 16);
     const senderLabel = dir === 'outbound' && m.sender_name ? ` · ${esc(m.sender_name)}` : '';
-    const avatar = dir === 'inbound'
-        ? `<div class="msg-avatar">C</div>`
-        : `<div class="msg-avatar" style="background:linear-gradient(135deg,#FF85A2,#E8547A);">A</div>`;
+
+    // avatar
+    const custAv = CUSTOMER_AVATAR
+        ? `<div class="msg-avatar"><img src="${esc(CUSTOMER_AVATAR)}" alt="${esc(CUSTOMER_INITIAL)}"></div>`
+        : `<div class="msg-avatar">${esc(CUSTOMER_INITIAL)}</div>`;
+    const adminAv = `<div class="msg-avatar" style="background:linear-gradient(135deg,#FF85A2,#E8547A);">A</div>`;
+    const avatar  = dir === 'inbound' ? custAv : adminAv;
 
     let bubbleContent = '';
-    if (m.message_type === 'image' && m.media_url) {
+    if ((m.message_type === 'image' || m.message_type === 'video') && m.media_url) {
         bubbleContent = `<img src="${esc(m.media_url)}" class="msg-img" onclick="window.open('${esc(m.media_url)}','_blank')">`;
     } else {
         bubbleContent = esc(m.content);
@@ -533,7 +558,7 @@ function renderMsg(m) {
 
     return `<div class="msg-row ${dir}">
         ${dir === 'inbound' ? avatar : ''}
-        <div>
+        <div class="msg-content">
             <div class="msg-bubble">${bubbleContent}</div>
             <span class="msg-time">${time}${senderLabel}</span>
         </div>
@@ -552,26 +577,57 @@ function loadMessages(convId) {
         if (!msgs.length) {
             el.innerHTML = '<div class="msg-system">ยังไม่มีข้อความในบทสนทนานี้</div>';
             lastMsgId = 0;
-            return;
+        } else {
+            el.innerHTML = msgs.map(renderMsg).join('');
+            lastMsgId = msgs.reduce((max, m) => Math.max(max, m.id||0), 0);
+            el.scrollTop = el.scrollHeight;
         }
-        el.innerHTML = msgs.map(renderMsg).join('');
-        lastMsgId = msgs.reduce((max, m) => Math.max(max, m.id||0), 0);
-        el.scrollTop = el.scrollHeight;
-        startPolling(convId);
+        startRealtime(convId);
     })
     .catch(() => {
         document.getElementById('chatMessages').innerHTML = '<div class="msg-system text-danger">โหลดข้อความไม่ได้ — ลองรีเฟรช</div>';
+        // fallback polling
+        startPolling(convId);
     });
 }
 
-/* ── Poll for new messages ─────────────────────────────────────── */
+/* ── Real-time: SSE + fallback polling ─────────────────────────── */
+function startRealtime(convId) {
+    if (typeof EventSource === 'undefined') { startPolling(convId); return; }
+    connectSSE(convId);
+}
+
+function connectSSE(convId) {
+    if (evtSource) { evtSource.close(); evtSource = null; }
+
+    const url = `${SITE_URL}/api/inbox-sse.php?conv_id=${convId}&since_id=${lastMsgId}`;
+    evtSource = new EventSource(url);
+
+    evtSource.addEventListener('new_message', () => {
+        pollMessages(convId);   // ดึงข้อความจริงมาแสดง
+    });
+
+    evtSource.addEventListener('close', () => {
+        evtSource.close();
+        setTimeout(() => connectSSE(convId), 500); // reconnect ทันที
+    });
+
+    evtSource.onerror = () => {
+        evtSource.close();
+        evtSource = null;
+        // SSE ล้มเหลว → fallback polling ทุก 2 วินาที
+        setLiveDot('yellow');
+        startPolling(convId);
+    };
+}
+
+/* ── Fallback polling ──────────────────────────────────────────── */
 function startPolling(convId) {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(() => pollMessages(convId), 4000);
+    pollTimer = setInterval(() => pollMessages(convId), 2000);
 }
 
 function pollMessages(convId) {
-    if (!lastMsgId && lastMsgId !== 0) return;
     fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body: new URLSearchParams({ajax:'messages', conv_id: convId, since_id: lastMsgId})
     })
@@ -585,7 +641,16 @@ function pollMessages(convId) {
             lastMsgId = Math.max(lastMsgId, m.id||0);
         });
         if (wasAtBottom) el.scrollTop = el.scrollHeight;
-    });
+    })
+    .catch(() => {});
+}
+
+/* ── Live dot color ─────────────────────────────────────────────── */
+function setLiveDot(color) {
+    const dot = document.getElementById('liveDot');
+    if (!dot) return;
+    const colors = { green:'#22c55e', yellow:'#f59e0b', red:'#ef4444' };
+    dot.style.background = colors[color] || color;
 }
 
 /* ── Open conversation ─────────────────────────────────────────── */
