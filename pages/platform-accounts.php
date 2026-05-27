@@ -139,7 +139,7 @@ $apiKey  = getSetting('api_key','YOUR_API_KEY');
             if ($acc['platform_slug'] === 'tiktok' && $acc['webhook_verify_token']) {
                 $state = base64_encode($acc['webhook_verify_token'] . ':' . $acc['app_secret'] . ':' . $acc['id']);
                 $redirectUri = urlencode($siteUrl . '/api/tiktok-oauth.php');
-                $tiktokAuthUrl = "https://services.tiktok.com/oauth/authorize?app_id={$acc['webhook_verify_token']}&state={$state}&redirect_uri={$redirectUri}";
+                $tiktokAuthUrl = "https://auth.tiktok-shops.com/oauth/authorize?app_key={$acc['webhook_verify_token']}&state={$state}&redirect_uri={$redirectUri}";
             }
         ?>
         <div class="acc-row" id="acc-row-<?= $acc['id'] ?>">
