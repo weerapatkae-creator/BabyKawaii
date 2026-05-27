@@ -17,6 +17,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msgType = 'warning';
     }
 
+    // Test LINE notification
+    if (isset($_POST['action']) && $_POST['action'] === 'test_line') {
+        header('Content-Type: application/json');
+        $ok = sendLineNotify("🧪 ทดสอบแจ้งเตือน BabyKawaii Admin\n\nระบบแจ้งเตือน LINE ทำงานปกติ ✅");
+        echo json_encode(['ok' => $ok, 'msg' => $ok ? 'ส่งสำเร็จ! เช็ค LINE ได้เลย' : 'ส่งไม่ได้ — ตรวจสอบ Token และ User ID']);
+        exit;
+    }
+
     // Save LINE & n8n settings
     if (isset($_POST['action']) && $_POST['action'] === 'save_integration') {
         $fields = [
@@ -201,15 +209,43 @@ try {
                             <div class="d-flex align-items-center gap-2 mb-3">
                                 <span class="intg-icon intg-msg">🤖</span>
                                 <div>
-                                    <div class="fw-semibold">LINE Messaging API</div>
+                                    <div class="fw-semibold">LINE OA แจ้งเตือน</div>
                                     <div class="text-muted" style="font-size:0.78rem;">
-                                        ใช้สำหรับ Chatbot + <strong>แจ้งเตือน Admin</strong> (แทน LINE Notify) — ต้องมี Official Account
+                                        แจ้งเตือนทาง LINE ทุกครั้งที่ลูกค้าส่งข้อความ — ต้องมี LINE Official Account
                                     </div>
                                 </div>
                                 <a href="https://developers.line.biz/console/" target="_blank"
-                                   class="btn btn-xs btn-outline-success ms-auto">
+                                   class="btn btn-sm btn-outline-success ms-auto">
                                     <i class="fas fa-external-link-alt me-1"></i> LINE Console
                                 </a>
+                            </div>
+
+                            <!-- ขั้นตอนการตั้งค่า -->
+                            <div class="alert alert-info py-2 px-3 mb-3" style="font-size:0.82rem;">
+                                <strong>📋 ขั้นตอนตั้งค่า (ครั้งแรก)</strong>
+                                <ol class="mb-0 mt-1 ps-3" style="line-height:2;">
+                                    <li>สร้าง <a href="https://manager.line.biz/" target="_blank">LINE Official Account</a> (ฟรี)</li>
+                                    <li>เปิด <a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → เลือก Provider → เลือก Channel → <strong>Messaging API</strong></li>
+                                    <li>คัดลอก <strong>Channel Secret</strong> (Basic Settings) และ <strong>Channel Access Token</strong> (Messaging API) มาใส่ด้านล่าง แล้วกด <strong>บันทึก</strong></li>
+                                    <li>ใส่ <strong>Webhook URL</strong> นี้ใน LINE Console → Messaging API → Webhook URL แล้วกด <strong>Verify</strong></li>
+                                    <li>เปิด LINE โทรศัพท์ → เพิ่มเพื่อน LINE OA ของคุณ → พิมพ์ <code>id</code> → bot จะตอบ User ID มาให้</li>
+                                    <li>คัดลอก User ID มาใส่ในช่อง <strong>Admin LINE User ID</strong> แล้วกด <strong>บันทึก</strong></li>
+                                    <li>กดปุ่ม <strong>ทดสอบส่ง</strong> เพื่อยืนยันว่าแจ้งเตือนทำงาน ✅</li>
+                                </ol>
+                            </div>
+
+                            <!-- Webhook URL -->
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Webhook URL <span class="text-muted fw-normal">(ใส่ใน LINE Console)</span></label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control font-monospace bg-light"
+                                           id="lineWebhookUrl"
+                                           value="<?= SITE_URL ?>/api/line-webhook.php" readonly>
+                                    <button type="button" class="btn btn-outline-secondary"
+                                            onclick="copyText('lineWebhookUrl', this)">
+                                        <i class="fas fa-copy"></i> คัดลอก
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="row g-3">
@@ -219,7 +255,7 @@ try {
                                            class="form-control font-monospace"
                                            placeholder="Long-lived channel access token"
                                            value="<?= htmlspecialchars($cfg['line_channel_access_token']) ?>">
-                                    <div class="form-text">Messaging API → Channel Access Token</div>
+                                    <div class="form-text">Messaging API → Issue → Long-lived token</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Channel Secret</label>
@@ -231,11 +267,28 @@ try {
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Admin LINE User ID</label>
-                                    <input type="text" name="line_admin_user_id"
-                                           class="form-control font-monospace"
-                                           placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                                           value="<?= htmlspecialchars($cfg['line_admin_user_id']) ?>">
-                                    <div class="form-text">LINE User ID ของเจ้าของร้าน (สำหรับ push notify)</div>
+                                    <div class="input-group">
+                                        <input type="text" name="line_admin_user_id"
+                                               id="lineAdminUserId"
+                                               class="form-control font-monospace"
+                                               placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                               value="<?= htmlspecialchars($cfg['line_admin_user_id']) ?>">
+                                        <?php if ($cfg['line_admin_user_id']): ?>
+                                        <span class="input-group-text text-success" title="ตั้งค่าแล้ว">✅</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="form-text">พิมพ์ <code>id</code> ใน LINE OA → bot จะตอบ User ID มาให้</div>
+                                </div>
+                                <div class="col-md-6 d-flex align-items-end">
+                                    <?php if ($cfg['line_channel_access_token'] && $cfg['line_admin_user_id']): ?>
+                                    <button type="button" class="btn btn-success w-100" onclick="testLineNotify()">
+                                        <i class="fas fa-paper-plane me-1"></i> ทดสอบส่งแจ้งเตือน LINE
+                                    </button>
+                                    <?php else: ?>
+                                    <div class="text-muted" style="font-size:0.8rem;">
+                                        ⬅️ กรอก Token + User ID แล้วบันทึกก่อน จึงจะทดสอบได้
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -598,11 +651,48 @@ function copyToClipboard(elId, btn) {
 
 function testLineNotify() {
     const btn = event.target.closest('button');
-    runApiTest(btn,
-        '<?= SITE_URL ?>/api/v1/notify.php',
-        { type: 'line_notify', message: '\n🌸 BabyKawaii — ทดสอบการแจ้งเตือน LINE Notify ✅\nระบบเชื่อมต่อสำเร็จ!' },
-        'btn-outline-success', 'btn-success'
-    );
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังส่ง...';
+    fetch('', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'test_line' })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.ok) {
+            btn.innerHTML = '<i class="fas fa-check"></i> ส่งสำเร็จ! เช็ค LINE ได้เลย';
+            btn.classList.replace('btn-success', 'btn-success');
+        } else {
+            btn.innerHTML = '<i class="fas fa-times"></i> ส่งไม่ได้';
+            alert('❌ ' + (data.msg || 'ตรวจสอบ Token และ User ID'));
+        }
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; }, 3500);
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-times text-danger"></i> Error';
+        setTimeout(() => btn.innerHTML = orig, 3000);
+    });
+}
+
+function copyText(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const text = el.value ?? el.textContent;
+    navigator.clipboard.writeText(text.trim()).then(() => {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check text-success"></i> คัดลอกแล้ว';
+        setTimeout(() => btn.innerHTML = orig, 2000);
+    }).catch(() => {
+        el.select();
+        document.execCommand('copy');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check text-success"></i> คัดลอกแล้ว';
+        setTimeout(() => btn.innerHTML = orig, 2000);
+    });
 }
 
 function testN8nWebhook() {
