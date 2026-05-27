@@ -51,8 +51,11 @@ $isAdminRole = in_array($_SESSION['admin_role'] ?? '', ['superadmin', 'admin']);
             <?php if ($item['page'] === 'orders' && $pendingOrders > 0): ?>
                 <span class="nav-badge"><?= $pendingOrders ?></span>
             <?php endif; ?>
-            <?php if ($item['page'] === 'inbox' && $unreadMessages > 0): ?>
-                <span class="nav-badge"><?= $unreadMessages ?></span>
+            <?php if ($item['page'] === 'inbox'): ?>
+                <span class="nav-badge" id="sidebarInboxBadge"
+                      style="<?= $unreadMessages > 0 ? '' : 'display:none' ?>">
+                    <?= $unreadMessages ?: '' ?>
+                </span>
             <?php endif; ?>
         </a>
         <?php endforeach; ?>

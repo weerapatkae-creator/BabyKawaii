@@ -62,12 +62,16 @@ $unreadMessages = $pdo->query("SELECT COALESCE(SUM(unread_count),0) FROM convers
             <?php endif; ?>
 
             <!-- Inbox unread -->
-            <a href="<?= SITE_URL ?>/pages/inbox.php" class="btn btn-sm position-relative <?= $unreadMessages > 0 ? 'btn-danger' : 'btn-outline-secondary' ?>">
+            <a href="<?= SITE_URL ?>/pages/inbox.php" id="headerInboxBtn"
+               class="btn btn-sm position-relative <?= $unreadMessages > 0 ? 'btn-danger' : 'btn-outline-secondary' ?>">
                 <i class="fas fa-comment-dots"></i>
-                <?php if ($unreadMessages > 0): ?>
-                <span class="badge bg-white text-danger badge-pill ms-1"><?= $unreadMessages ?></span>
-                <span class="d-none d-md-inline ms-1">ข้อความใหม่</span>
-                <?php endif; ?>
+                <span id="headerInboxBadge"
+                      class="badge bg-white text-danger badge-pill ms-1"
+                      style="<?= $unreadMessages > 0 ? '' : 'display:none' ?>">
+                    <?= $unreadMessages ?: '' ?>
+                </span>
+                <span id="headerInboxLabel" class="d-none d-md-inline ms-1"
+                      style="<?= $unreadMessages > 0 ? '' : 'display:none' ?>">ข้อความใหม่</span>
             </a>
 
             <!-- User dropdown -->

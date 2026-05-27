@@ -298,7 +298,7 @@ try {
 }
 </style>
 
-<div class="container-fluid fade-in px-0">
+<div class="container-fluid fade-in px-0" id="inboxApp">
     <!-- Header bar -->
     <div class="d-flex gap-2 px-3 pt-3 pb-2 flex-wrap align-items-center">
         <h1 class="page-title mb-0">💬 Inbox</h1>

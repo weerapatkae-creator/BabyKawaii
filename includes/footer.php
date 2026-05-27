@@ -34,6 +34,51 @@
     <script><?= $extraJs ?></script>
     <?php endif; ?>
 
+    <!-- Global inbox badge poller (ทุกหน้า) -->
+    <?php if (isset($_SESSION['admin_id'])): ?>
+    <script>
+    (function () {
+        const POLL_MS = 3000;
+        const API     = '<?= SITE_URL ?>/api/inbox-notify.php?last_id=0';
+
+        function updateInboxBadge(n) {
+            // Sidebar badge
+            const sb = document.getElementById('sidebarInboxBadge');
+            if (sb) {
+                if (n > 0) { sb.textContent = n > 99 ? '99+' : n; sb.style.display = ''; }
+                else        { sb.style.display = 'none'; }
+            }
+            // Header button + badge
+            const btn   = document.getElementById('headerInboxBtn');
+            const badge = document.getElementById('headerInboxBadge');
+            const label = document.getElementById('headerInboxLabel');
+            if (btn) {
+                if (n > 0) {
+                    btn.classList.replace('btn-outline-secondary', 'btn-danger');
+                    if (badge) { badge.textContent = n > 99 ? '99+' : n; badge.style.display = ''; }
+                    if (label) label.style.display = '';
+                } else {
+                    btn.classList.replace('btn-danger', 'btn-outline-secondary');
+                    if (badge) badge.style.display = 'none';
+                    if (label) label.style.display = 'none';
+                }
+            }
+        }
+
+        function poll() {
+            fetch(API, { cache: 'no-store' })
+                .then(r => r.json())
+                .then(d => updateInboxBadge(parseInt(d.stats?.total_unread) || 0))
+                .catch(() => {})
+                .finally(() => setTimeout(poll, POLL_MS));
+        }
+
+        // ถ้าอยู่หน้า inbox อยู่แล้ว ไม่ต้องเปิด poller ซ้ำ (inbox.php มีของตัวเอง)
+        if (!document.getElementById('inboxApp')) poll();
+    })();
+    </script>
+    <?php endif; ?>
+
     <!-- Toast notifications -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"></div>
 
