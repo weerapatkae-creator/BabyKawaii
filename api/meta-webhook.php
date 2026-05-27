@@ -179,8 +179,15 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
         VALUES (?, 'inbound', ?, ?, ?, ?, NOW())
     ")->execute([$convId, $msgType, $text, $mediaUrl, $msgId ?: null]);
 
-    // LINE notification — แจ้งครั้งเดียวต่อ "กระทู้ใหม่" (ตอน unread=0 → 1)
-    if (!$wasUnread) {
+    // LINE notification — atomic cooldown 3 นาที (ป้องกัน flood + race condition)
+    $claim = $pdo->prepare("
+        UPDATE conversations
+        SET line_notified_at = NOW()
+        WHERE id = ?
+          AND (line_notified_at IS NULL OR line_notified_at < NOW() - INTERVAL 3 MINUTE)
+    ");
+    $claim->execute([$convId]);
+    if ($claim->rowCount() > 0) {
         $notifyMsg = "🔔 มีลูกค้าทักใหม่!\n"
             . "📲 [{$accountName}]\n"
             . "⏰ " . date('d/m/Y H:i') . " น.\n"

@@ -139,9 +139,15 @@ $pdo->prepare(
      VALUES (?,?,?,?,?,NOW(),?)"
 )->execute([$convId, 'inbound', $message, $messageType, $mediaUrl, $platformMsgId]);
 
-// ── LINE Notify admin — แจ้งครั้งเดียวต่อ "กระทู้ใหม่" ──────────
-$wasUnread = $conv && (int)$conv['unread_count'] > 0;
-if (!$wasUnread) {
+// ── LINE Notify admin — atomic cooldown 3 นาที ───────────────────
+$claim = $pdo->prepare("
+    UPDATE conversations
+    SET line_notified_at = NOW()
+    WHERE id = ?
+      AND (line_notified_at IS NULL OR line_notified_at < NOW() - INTERVAL 3 MINUTE)
+");
+$claim->execute([$convId]);
+if ($claim->rowCount() > 0) {
     $platform = $pdo->prepare("SELECT name, icon FROM platforms WHERE id=?");
     $platform->execute([$platformId]);
     $platform    = $platform->fetch();
