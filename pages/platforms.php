@@ -35,10 +35,36 @@ $platforms = $pdo->query("
     ORDER  BY p.id
 ")->fetchAll();
 
-// ดึงรายชื่อ accounts ของแต่ละ platform ไว้แสดงในการ์ด
+// ดึงรายชื่อ accounts ของแต่ละ platform
 $accountsByPf = [];
 $accStmt = $pdo->query("SELECT pa.*, p.id AS pid FROM platform_accounts pa JOIN platforms p ON p.id=pa.platform_id WHERE pa.is_active=1");
 foreach ($accStmt->fetchAll() as $a) { $accountsByPf[$a['pid']][] = $a; }
+
+// จำนวนลูกค้าที่เคยทักเข้ามา (unique) ต่อแพลตฟอร์ม
+$pfConvStats = [];
+$stmt = $pdo->query("
+    SELECT platform_id,
+           COUNT(DISTINCT customer_uid) AS customer_count,
+           COUNT(*) AS total_convs
+    FROM   conversations
+    WHERE  platform_id IS NOT NULL
+    GROUP  BY platform_id
+");
+foreach ($stmt->fetchAll() as $row) {
+    $pfConvStats[$row['platform_id']] = $row;
+}
+
+// Brand icon mapping (slug → FontAwesome class)
+$brandIcons = [
+    'facebook'  => ['fab fa-facebook-f',   '#1877F2'],
+    'instagram' => ['fab fa-instagram',     '#E4405F'],
+    'tiktok'    => ['fab fa-tiktok',        '#111111'],
+    'line'      => ['fab fa-line',          '#06C755'],
+    'twitter'   => ['fab fa-x-twitter',    '#000000'],
+    'youtube'   => ['fab fa-youtube',       '#FF0000'],
+    'shopee'    => ['fas fa-shopping-bag',  '#EE4D2D'],
+    'lazada'    => ['fas fa-store',         '#0F146D'],
+];
 
 
 $pageTitle = 'แพลตฟอร์มขาย';
@@ -76,57 +102,79 @@ while ($row = $pfSalesStmt->fetch()) {
     <!-- Platform Cards -->
     <div class="row g-4 mb-4">
         <?php foreach ($platforms as $pf):
-            $sales = $pfSalesData[$pf['id']] ?? ['revenue' => 0, 'orders' => 0];
-            $gradientClass = "style=\"background:linear-gradient(135deg,{$pf['color']},darken)\"";
-            $bg = $pf['color'];
+            $sales   = $pfSalesData[$pf['id']]  ?? ['revenue' => 0, 'orders' => 0];
+            $convSt  = $pfConvStats[$pf['id']]   ?? ['customer_count' => 0];
+            $slug    = strtolower($pf['slug'] ?? preg_replace('/[^a-z0-9]/', '', strtolower($pf['name'])));
+            [$faIcon, $iconColor] = $brandIcons[$slug] ?? ['fas fa-store', $pf['color']];
+            $bg      = $pf['color'];
+            $accounts = $accountsByPf[$pf['id']] ?? [];
         ?>
         <div class="col-md-6 col-lg-4">
-            <div class="platform-card" style="background:linear-gradient(135deg,<?= htmlspecialchars($bg) ?>,<?= htmlspecialchars($bg) ?>99);">
+            <div class="platform-card" style="background:linear-gradient(135deg,<?= htmlspecialchars($bg) ?>,<?= htmlspecialchars($bg) ?>bb);">
+
+                <!-- Header row: icon + name + actions -->
                 <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <div class="pf-icon"><?= $pf['icon'] ?></div>
-                        <div class="pf-name"><?= htmlspecialchars($pf['name']) ?></div>
-                        <?php if ($pf['username']): ?>
-                        <div style="font-size:0.8rem;opacity:0.8;">@<?= htmlspecialchars($pf['username']) ?></div>
-                        <?php endif; ?>
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Brand icon circle -->
+                        <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.22);
+                                    display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <i class="<?= $faIcon ?>" style="font-size:1.4rem;color:#fff;"></i>
+                        </div>
+                        <div>
+                            <div class="pf-name" style="font-size:1.1rem;"><?= htmlspecialchars($pf['name']) ?></div>
+                            <?php if ($pf['username']): ?>
+                            <div style="font-size:0.78rem;opacity:0.85;">@<?= htmlspecialchars($pf['username']) ?></div>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-1">
                         <?php if ($pf['page_url']): ?>
-                        <a href="<?= htmlspecialchars($pf['page_url']) ?>" target="_blank" class="btn btn-sm btn-light btn-light" style="opacity:0.9;">
+                        <a href="<?= htmlspecialchars($pf['page_url']) ?>" target="_blank"
+                           class="btn btn-sm btn-light" style="opacity:0.9;" title="เปิดเพจ">
                             <i class="fas fa-external-link-alt"></i>
                         </a>
                         <?php endif; ?>
-                        <button class="btn btn-sm btn-light" style="opacity:0.9;" onclick="openPfModal(<?= htmlspecialchars(json_encode($pf)) ?>)">
+                        <button class="btn btn-sm btn-light" style="opacity:0.9;"
+                                onclick="openPfModal(<?= htmlspecialchars(json_encode($pf)) ?>)" title="แก้ไข">
                             <i class="fas fa-edit"></i>
                         </button>
                     </div>
                 </div>
+
+                <!-- Account chips -->
+                <?php if ($accounts): ?>
+                <div class="d-flex flex-wrap gap-1 mb-3">
+                    <?php foreach ($accounts as $a): ?>
+                    <span style="background:rgba(255,255,255,0.28);padding:3px 10px;border-radius:20px;
+                                 font-size:0.73rem;font-weight:600;display:flex;align-items:center;gap:4px;">
+                        <i class="<?= $faIcon ?>" style="font-size:0.7rem;"></i>
+                        <?= htmlspecialchars($a['name']) ?>
+                    </span>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+
+                <!-- Stats row -->
                 <div class="row g-2 text-center">
                     <div class="col-4">
                         <div class="pf-stat"><?= number_format($sales['revenue']) ?></div>
-                        <div class="pf-label">฿ยอดขายเดือนนี้</div>
+                        <div class="pf-label">฿ เดือนนี้</div>
                     </div>
                     <div class="col-4">
                         <div class="pf-stat"><?= number_format($sales['orders']) ?></div>
                         <div class="pf-label">ออเดอร์</div>
                     </div>
                     <div class="col-4">
-                        <div class="pf-stat"><?= number_format($pf['followers']) ?></div>
-                        <div class="pf-label">ผู้ติดตาม</div>
+                        <div class="pf-stat"><?= number_format($convSt['customer_count']) ?></div>
+                        <div class="pf-label">💬 คนทักเข้ามา</div>
                     </div>
                 </div>
+
                 <?php if ($pf['commission_rate'] > 0): ?>
                 <div class="mt-2" style="font-size:0.75rem;opacity:0.8;">
                     <i class="fas fa-percent"></i> ค่าคอม <?= $pf['commission_rate'] ?>%
                 </div>
                 <?php endif; ?>
-                <div class="mt-2 d-flex flex-wrap gap-1">
-                    <?php foreach ($accountsByPf[$pf['id']] ?? [] as $a): ?>
-                    <span style="background:rgba(255,255,255,0.25);padding:2px 9px;border-radius:12px;font-size:0.73rem;font-weight:600;">
-                        ✅ <?= htmlspecialchars($a['name']) ?>
-                    </span>
-                    <?php endforeach; ?>
-                </div>
             </div>
         </div>
         <?php endforeach; ?>
