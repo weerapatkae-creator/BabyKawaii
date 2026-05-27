@@ -371,26 +371,66 @@ while ($row = $pfSalesStmt->fetch()) {
 
 <!-- Platform Modal -->
 <div class="modal fade" id="pfModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <form method="POST">
             <input type="hidden" name="save_platform" value="1">
             <input type="hidden" name="platform_id" id="pfId" value="0">
+            <input type="hidden" name="icon" id="pfIcon" value="🛒">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title" id="pfModalTitle">➕ เพิ่มแพลตฟอร์ม</h5><button type="button" class="btn-close" onclick="closePfModal()"></button></div>
+                <div class="modal-header">
+                    <h5 class="modal-title" id="pfModalTitle">➕ เพิ่มแพลตฟอร์ม</h5>
+                    <button type="button" class="btn-close" onclick="closePfModal()"></button>
+                </div>
                 <div class="modal-body">
+
+                    <!-- Quick-select platform presets -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">เลือกแพลตฟอร์ม</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php
+                            $presets = [
+                                ['Facebook',  'facebook',  '#1877F2', 'fab fa-facebook-f'],
+                                ['Instagram', 'instagram', '#E4405F', 'fab fa-instagram'],
+                                ['TikTok',    'tiktok',    '#111111', 'fab fa-tiktok'],
+                                ['LINE OA',   'line',      '#06C755', 'fab fa-line'],
+                                ['Shopee',    'shopee',    '#EE4D2D', 'fas fa-shopping-bag'],
+                                ['Lazada',    'lazada',    '#0F146D', 'fas fa-store'],
+                                ['YouTube',   'youtube',   '#FF0000', 'fab fa-youtube'],
+                            ];
+                            foreach ($presets as [$label, $slug, $color, $fa]):
+                            ?>
+                            <button type="button" class="btn btn-sm pf-preset-btn"
+                                    style="background:<?= $color ?>;color:#fff;border:2px solid transparent;border-radius:10px;padding:6px 12px;"
+                                    onclick="selectPreset('<?= $label ?>','<?= $slug ?>','<?= $color ?>','<?= $fa ?>')">
+                                <i class="<?= $fa ?> me-1"></i><?= $label ?>
+                            </button>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
                     <div class="row g-3">
-                        <div class="col-md-8">
-                            <label class="form-label">ชื่อแพลตฟอร์ม</label>
-                            <input type="text" name="name" id="pfName" class="form-control" required>
+                        <!-- Icon preview + Name + Color -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">ชื่อแพลตฟอร์ม</label>
+                            <div class="input-group">
+                                <!-- Live icon preview -->
+                                <span class="input-group-text p-0" style="width:46px;justify-content:center;">
+                                    <div id="pfIconPreview"
+                                         style="width:38px;height:38px;border-radius:8px;background:#666;
+                                                display:flex;align-items:center;justify-content:center;">
+                                        <i id="pfIconPreviewI" class="fas fa-store" style="color:#fff;font-size:1.1rem;"></i>
+                                    </div>
+                                </span>
+                                <input type="text" name="name" id="pfName" class="form-control"
+                                       placeholder="เช่น Facebook เพจร้าน" required
+                                       oninput="autoDetectIcon(this.value)">
+                                <span class="input-group-text">สี</span>
+                                <input type="color" name="color" id="pfColor"
+                                       class="form-control form-control-color" style="width:50px;"
+                                       value="#666666" oninput="updatePreviewBg(this.value)">
+                            </div>
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label">ไอคอน</label>
-                            <input type="text" name="icon" id="pfIcon" class="form-control" value="🛒">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">สี</label>
-                            <input type="color" name="color" id="pfColor" class="form-control form-control-color w-100" value="#666666">
-                        </div>
+
                         <div class="col-md-6">
                             <label class="form-label">URL เพจ</label>
                             <input type="url" name="page_url" id="pfUrl" class="form-control" placeholder="https://...">
@@ -430,6 +470,56 @@ while ($row = $pfSalesStmt->fetch()) {
 <script>
 const pfModalEl = document.getElementById('pfModal');
 
+// Brand icon map (client-side mirror of PHP $brandIcons)
+const BRAND_ICONS = {
+    facebook:  ['fab fa-facebook-f',  '#1877F2'],
+    instagram: ['fab fa-instagram',   '#E4405F'],
+    tiktok:    ['fab fa-tiktok',      '#111111'],
+    line:      ['fab fa-line',        '#06C755'],
+    shopee:    ['fas fa-shopping-bag','#EE4D2D'],
+    lazada:    ['fas fa-store',       '#0F146D'],
+    youtube:   ['fab fa-youtube',     '#FF0000'],
+    twitter:   ['fab fa-x-twitter',   '#000000'],
+};
+
+function slugify(str) {
+    return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function autoDetectIcon(name) {
+    const slug = slugify(name);
+    const found = Object.entries(BRAND_ICONS).find(([k]) => slug.includes(k));
+    if (found) {
+        const [, [fa, color]] = found;
+        setIconPreview(fa, color);
+        document.getElementById('pfColor').value = color;
+        document.getElementById('pfIcon').value = fa;
+    }
+}
+
+function setIconPreview(fa, color) {
+    const box = document.getElementById('pfIconPreview');
+    const ico = document.getElementById('pfIconPreviewI');
+    if (box) box.style.background = color;
+    if (ico) { ico.className = fa + ' '; ico.style.color = '#fff'; }
+}
+
+function updatePreviewBg(color) {
+    const box = document.getElementById('pfIconPreview');
+    if (box) box.style.background = color;
+}
+
+function selectPreset(name, slug, color, fa) {
+    document.getElementById('pfName').value = name;
+    document.getElementById('pfColor').value = color;
+    document.getElementById('pfIcon').value = fa;
+    setIconPreview(fa, color);
+    // highlight selected preset btn
+    document.querySelectorAll('.pf-preset-btn').forEach(b => b.style.outline = 'none');
+    event.target.closest('.pf-preset-btn').style.outline = '3px solid #fff';
+    event.target.closest('.pf-preset-btn').style.outlineOffset = '2px';
+}
+
 function closePfModal() {
     try { bootstrap.Modal.getInstance(pfModalEl)?.hide(); } catch(e) {}
     setTimeout(() => {
@@ -448,20 +538,33 @@ function closePfModal() {
 function openPfModal(pf) {
     if (pf) {
         document.getElementById('pfModalTitle').textContent = '✏️ แก้ไขแพลตฟอร์ม';
-        document.getElementById('pfId').value = pf.id;
-        document.getElementById('pfName').value = pf.name;
-        document.getElementById('pfIcon').value = pf.icon;
-        document.getElementById('pfColor').value = pf.color;
-        document.getElementById('pfUrl').value = pf.page_url || '';
-        document.getElementById('pfUsername').value = pf.username || '';
-        document.getElementById('pfFollowers').value = pf.followers;
-        document.getElementById('pfCommission').value = pf.commission_rate;
-        document.getElementById('pfNotes').value = pf.notes || '';
-        document.getElementById('pfActive').checked = pf.is_active == 1;
+        document.getElementById('pfId').value         = pf.id;
+        document.getElementById('pfName').value       = pf.name;
+        document.getElementById('pfColor').value      = pf.color || '#666666';
+        document.getElementById('pfUrl').value        = pf.page_url || '';
+        document.getElementById('pfUsername').value   = pf.username || '';
+        document.getElementById('pfFollowers').value  = pf.followers || 0;
+        document.getElementById('pfCommission').value = pf.commission_rate || 0;
+        document.getElementById('pfNotes').value      = pf.notes || '';
+        document.getElementById('pfActive').checked   = pf.is_active == 1;
+        // Detect icon from name
+        const slug = slugify(pf.name);
+        const found = Object.entries(BRAND_ICONS).find(([k]) => slug.includes(k));
+        if (found) {
+            const [, [fa, color]] = found;
+            setIconPreview(fa, pf.color || color);
+            document.getElementById('pfIcon').value = fa;
+        } else {
+            setIconPreview('fas fa-store', pf.color || '#666');
+            document.getElementById('pfIcon').value = pf.icon || '🛒';
+        }
+        updatePreviewBg(pf.color || '#666');
     } else {
         document.getElementById('pfModalTitle').textContent = '➕ เพิ่มแพลตฟอร์ม';
-        document.getElementById('pfId').value = '0';
+        document.getElementById('pfId').value  = '0';
         document.getElementById('pfName').value = '';
+        setIconPreview('fas fa-store', '#666');
+        document.getElementById('pfColor').value = '#666666';
     }
     bootstrap.Modal.getOrCreateInstance(pfModalEl).show();
 }
