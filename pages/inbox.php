@@ -68,11 +68,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 
         if ($sinceId) {
             // Poll mode — only new messages
-            $msgs = $pdo->prepare("SELECT m.*,u.name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? AND m.id>? ORDER BY m.sent_at ASC");
+            $msgs = $pdo->prepare("SELECT m.*,u.full_name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? AND m.id>? ORDER BY m.sent_at ASC");
             $msgs->execute([$convId, $sinceId]);
         } else {
             // Initial load — last 100
-            $msgs = $pdo->prepare("SELECT m.*,u.name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at ASC LIMIT 100");
+            $msgs = $pdo->prepare("SELECT m.*,u.full_name as sender_name FROM messages m LEFT JOIN admin_users u ON u.id=m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at ASC LIMIT 100");
             $msgs->execute([$convId]);
         }
         echo json_encode($msgs->fetchAll(PDO::FETCH_ASSOC));

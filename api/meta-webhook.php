@@ -163,7 +163,7 @@ function saveMessage(PDO $pdo, int $platformId, int $accountId, string $accountN
     // บันทึกข้อความ (ป้องกัน duplicate)
     $pdo->prepare("
         INSERT IGNORE INTO messages
-            (conversation_id, direction, message_type, content, media_url, platform_message_id, created_at)
+            (conversation_id, direction, message_type, content, media_url, platform_message_id, sent_at)
         VALUES (?, 'inbound', ?, ?, ?, ?, NOW())
     ")->execute([$convId, $msgType, $text, $mediaUrl, $msgId ?: null]);
 
