@@ -304,34 +304,22 @@ try {
             <div class="inbox-list-head">
                 <input type="text" id="searchInput" class="inbox-search" placeholder="🔍 ค้นหาชื่อ / ข้อความ..."
                        value="<?= htmlspecialchars($search) ?>" oninput="filterConvs(this.value)">
-                <?php if (!empty($platforms)): ?>
-                <div class="d-flex gap-1 mt-2 flex-wrap">
-                    <?php foreach ($platforms as $pf): ?>
-                    <a href="?status=<?= $statusFilter ?>&platform=<?= $pf['id'] ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
-                       class="badge text-decoration-none"
-                       style="background:<?= $platformFilter==$pf['id']?$pf['color']:'#eee' ?>;color:<?= $platformFilter==$pf['id']?'#fff':'#666' ?>;">
-                        <?= $pf['icon'] ?> <?= htmlspecialchars($pf['name']) ?>
-                    </a>
-                    <?php endforeach; ?>
-                    <?php if ($platformFilter || $accountFilter): ?>
-                    <a href="?status=<?= $statusFilter ?>" class="badge bg-secondary text-decoration-none">✕ ล้าง</a>
-                    <?php endif; ?>
-                </div>
-                <?php endif; ?>
                 <?php if (!empty($allAccounts)): ?>
-                <div class="d-flex gap-1 mt-1 flex-wrap">
+                <div class="d-flex gap-1 mt-2 flex-wrap">
                     <?php foreach ($allAccounts as $acc):
                         $isActiveAcc = $accountFilter === (int)$acc['id'];
-                        $bgColor     = $isActiveAcc ? ($acc['color'] ?: $acc['platform_color']) : '#f5f5f5';
-                        $txtColor    = $isActiveAcc ? '#fff' : '#555';
+                        $base        = $acc['color'] ?: $acc['platform_color'] ?: '#888';
                     ?>
                     <a href="?status=<?= $statusFilter ?>&account=<?= $acc['id'] ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
                        class="badge text-decoration-none"
-                       style="background:<?= $bgColor ?>;color:<?= $txtColor ?>;font-weight:<?= $isActiveAcc?'700':'400' ?>;"
-                       title="<?= htmlspecialchars($acc['name']) ?>">
+                       style="background:<?= $isActiveAcc ? $base : '#eee' ?>;color:<?= $isActiveAcc ? '#fff' : '#555' ?>;font-weight:<?= $isActiveAcc?'700':'400' ?>;">
                         <?= $acc['platform_icon'] ?> <?= htmlspecialchars($acc['name']) ?>
                     </a>
                     <?php endforeach; ?>
+                    <?php if ($accountFilter || $platformFilter): ?>
+                    <a href="?status=<?= $statusFilter ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
+                       class="badge bg-secondary text-decoration-none">✕ ทั้งหมด</a>
+                    <?php endif; ?>
                 </div>
                 <?php endif; ?>
             </div>
