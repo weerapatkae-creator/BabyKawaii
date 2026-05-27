@@ -458,7 +458,8 @@ try {
                         <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
                     </select>
                     <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
-                       class="btn btn-sm btn-outline-primary" title="ดูออเดอร์">
+                       class="btn btn-sm btn-outline-primary" title="ดูออเดอร์"
+                       target="_blank" rel="noopener">
                         <i class="fas fa-box-open"></i>
                     </a>
                 </div>
@@ -541,7 +542,8 @@ const CUSTOMER_AVATAR  = <?= json_encode($activeConv['customer_avatar'] ?? '') ?
 const CUSTOMER_INITIAL = <?= json_encode(mb_substr($activeConv['customer_name'] ?? '?', 0, 1)) ?>;
 let   lastMsgId       = 0;
 let   pollTimer       = null;
-let   initialLoadDone = false;  // กัน sound ตอน load ครั้งแรก
+// globalLastId เริ่มจาก max ID ปัจจุบัน → ป้องกันเสียงดังกับข้อความเก่า
+let   globalLastId    = <?= (int)$pdo->query("SELECT COALESCE(MAX(id),0) FROM messages")->fetchColumn() ?>;
 
 /* ── Notification sound (Web Audio API — ไม่ต้องใช้ไฟล์เสียง) ──── */
 let _audioCtx = null;
@@ -619,7 +621,6 @@ function loadMessages(convId) {
             lastMsgId = msgs.reduce((max, m) => Math.max(max, m.id||0), 0);
             el.scrollTop = el.scrollHeight;
         }
-        initialLoadDone = true;   // เริ่ม play sound ได้แล้วหลัง load
         startRealtime(convId);
     })
     .catch(() => {
@@ -650,21 +651,18 @@ function pollMessages(convId) {
         if (!msgs.length) return;
         const el  = document.getElementById('chatMessages');
         const atB = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        let hasInbound = false;
         msgs.forEach(m => {
             const mid = parseInt(m.id) || 0;
-            // ข้ามถ้า message นี้มีใน DOM แล้ว (optimistic bubble ที่ถูก mark ไว้)
+            // ข้ามถ้า message นี้มีใน DOM แล้ว (optimistic bubble)
             if (mid && el.querySelector(`[data-msg-id="${mid}"]`)) {
                 lastMsgId = Math.max(lastMsgId, mid);
                 return;
             }
             el.insertAdjacentHTML('beforeend', renderMsg(m));
             lastMsgId = Math.max(lastMsgId, mid);
-            if (m.direction === 'inbound') hasInbound = true;
         });
         if (atB) el.scrollTop = el.scrollHeight;
-        // เล่น sound เมื่อมีข้อความจากลูกค้า (ไม่เล่นตอน initial load)
-        if (hasInbound && initialLoadDone) playNotif();
+        // ไม่ play sound ที่นี่ — globalPoll จัดการเสียงแทน (กัน double sound)
     })
     .catch(() => {});
 }
@@ -827,24 +825,19 @@ function toggleList() {
 }
 
 /* ── Global Notify: real-time sound + badge + conv list ─────────── */
-let globalLastId  = 0;
-let globalTimer   = null;
-let notifyReady   = false; // ป้องกัน sound ตอน init
+// globalLastId ถูก init จาก PHP (max message ID ตอน load) — อยู่บนสุดของ <script>
+let globalTimer = null;
 
 function startGlobalNotify() {
-    // รอ 1 วินาทีก่อนเริ่ม เพื่อให้ init เสร็จก่อน
-    setTimeout(() => {
-        notifyReady = true;
-        globalTimer = setInterval(globalPoll, 1500);
-    }, 1000);
+    globalTimer = setInterval(globalPoll, 1500);
 }
 
 function globalPoll() {
     fetch(`${SITE_URL}/api/inbox-notify.php?last_id=${globalLastId}`)
     .then(r => r.json())
     .then(data => {
-        // เล่นเสียง + flash tab title เมื่อมีข้อความใหม่
-        if (notifyReady && data.has_new && data.new_id > globalLastId) {
+        // เล่นเสียงเฉพาะข้อความขาเข้าที่ใหม่กว่า globalLastId (ลูกค้าทักมา)
+        if (data.has_new && data.new_id > globalLastId) {
             playNotif();
             flashTitle();
         }
