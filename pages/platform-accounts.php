@@ -331,21 +331,25 @@ const PLATFORM_HINTS = {
                 4. ใช้ Page Access Token + App Secret เดียวกับ Facebook Page`
     },
     tiktok: {
-        uid:         'TikTok Shop ID (ดูจาก Seller Center → My Account → Shop ID)',
-        token:       'Access Token จาก TikTok Shop Partner Portal → App → Auth Token',
-        secret:      'App Secret จาก TikTok Partner Portal → My Apps → App Credentials',
-        verify:      'App Key จาก TikTok Partner Portal → My Apps → App Credentials',
-        lSecret:     'App Secret (TikTok)',
-        lVerify:     'App Key (TikTok)',
-        showSecret:  true,
-        showVerify:  true,
-        webhookPath: '/api/tiktok-webhook.php',
-        guide: `<strong>🎵 วิธีตั้ง TikTok Shop Webhook:</strong><br>
-                1. ไปที่ <a href="https://partner.tiktokshop.com" target="_blank">partner.tiktokshop.com</a><br>
-                2. <strong>My Apps</strong> → เลือก App → <strong>Event Settings</strong> → Webhooks<br>
-                3. ใส่ Webhook URL แล้วกด Verify (ระบบจะส่ง GET challenge มา)<br>
-                4. Subscribe events: <code>IM_MESSAGE</code>, <code>ORDER_STATUS_CHANGE</code><br>
-                5. คัดลอก <strong>App Key</strong> + <strong>App Secret</strong> + <strong>Access Token</strong> มากรอก`
+        uid:         '@username ของ TikTok (เช่น @babykawaii.th)',
+        token:       'ไม่จำเป็นสำหรับบัญชีทั่วไป — ใส่ถ้ามี Client Token จาก TikTok for Developers',
+        secret:      'ไม่จำเป็นสำหรับบัญชีทั่วไป',
+        verify:      'ไม่จำเป็นสำหรับบัญชีทั่วไป',
+        lSecret:     'Client Secret (ถ้ามี)',
+        lVerify:     'Client Key (ถ้ามี)',
+        showSecret:  false,
+        showVerify:  false,
+        webhookPath: '',
+        guide: `<div class="alert alert-warning mb-2 py-2" style="font-size:.8rem;">
+                    ⚠️ <strong>TikTok บัญชีทั่วไปไม่รองรับ DM API</strong> — ข้อความ Direct Message ต้องเปิดดูใน TikTok แอพโดยตรง
+                    (API สำหรับ DM มีเฉพาะ TikTok Shop เท่านั้น)
+                </div>
+                <strong>🎵 สิ่งที่ทำได้กับบัญชีทั่วไป:</strong><br>
+                ✅ เก็บข้อมูล username, follower count, URL เพจ<br>
+                ✅ แสดงในหน้าแพลตฟอร์มและ Dashboard<br>
+                ✅ นับออเดอร์ที่มาจาก TikTok (กรอก manual)<br>
+                ❌ รับข้อความ DM อัตโนมัติไม่ได้<br><br>
+                💡 ถ้าต้องการรับ DM อัตโนมัติ → ต้องสมัคร <a href="https://seller-th.tiktok.com" target="_blank">TikTok Shop</a>`
     },
     walkin: {
         uid:         'ไม่จำเป็น',
@@ -373,11 +377,20 @@ function updatePlatformHint() {
     document.getElementById('hintVerify').textContent     = h.verify || '';
     document.getElementById('lSecret').textContent        = h.lSecret || 'App Secret';
     document.getElementById('lVerify').textContent        = h.lVerify  || 'Verify Token';
+    document.getElementById('lUid').textContent           = slug === 'tiktok' ? 'TikTok Username' :
+                                                            slug === 'walkin'  ? 'รหัสสาขา (ถ้ามี)' :
+                                                            'Account / Page ID';
+    document.getElementById('lToken').textContent         = slug === 'tiktok' ? 'Client Token (ถ้ามี)' : 'Page Access Token';
     document.getElementById('setupGuide').innerHTML       = h.guide;
     document.getElementById('fColor').value               = col;
 
     document.getElementById('rowSecret').style.display = h.showSecret ? '' : 'none';
     document.getElementById('rowVerify').style.display = h.showVerify ? '' : 'none';
+
+    // TikTok ทั่วไป: token field ไม่บังคับ
+    const tokenRequired = slug !== 'tiktok' && slug !== 'walkin';
+    document.getElementById('fToken').required = tokenRequired;
+    document.querySelector('label[for] span.text-danger, #lToken + span')?.remove();
 
     updateWebhookPreview(slug);
 }
