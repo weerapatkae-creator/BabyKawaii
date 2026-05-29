@@ -196,16 +196,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                   FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
             ")->fetchAll(PDO::FETCH_ASSOC);
 
-            // คำนวณ committed stock
-            // committed = SUM(bi.quantity × จำนวนเซตที่ยังมีในสต็อก)
-            // = bi.quantity (ต่อเซต) × COALESCE(SUM stock ของ bundle product)
-            $committedMap = []; // [product_id][size][color] => committed_qty
+            // committed stock = จำนวนที่ถูกเอาไปจัดเซตแล้ว
+            // bundle_items.quantity = จำนวนชิ้นจริงที่อยู่ในเซต (ไม่ใช่ต่อ 1 เซต)
+            $committedMap = [];
             $bundleStmt = $pdo->query("
                 SELECT bi.product_id, bi.size, bi.color,
-                       SUM(bi.quantity * COALESCE(bs.quantity, 0)) AS committed
+                       SUM(bi.quantity) AS committed
                 FROM bundle_items bi
                 JOIN products bp ON bp.id = bi.bundle_id AND bp.status = 'active'
-                LEFT JOIN stock bs ON bs.product_id = bi.bundle_id
                 WHERE bi.product_id IN ($ids)
                 GROUP BY bi.product_id, bi.size, bi.color
             ");
