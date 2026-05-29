@@ -74,6 +74,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         exit;
     }
 
+    // ── ดึงข้อมูล conversation header ─────────────────────────────
+    if ($_POST['ajax'] === 'conv_info') {
+        $cid = (int)($_POST['conv_id'] ?? 0);
+        $c = $pdo->prepare("
+            SELECT c.id, c.customer_name, c.customer_avatar, c.customer_uid, c.status,
+                   c.platform_account_id,
+                   p.name AS platform_name, p.color AS platform_color, p.slug AS platform_slug,
+                   pa.name AS account_name, pa.color AS account_color
+            FROM conversations c
+            LEFT JOIN platforms p ON p.id = c.platform_id
+            LEFT JOIN platform_accounts pa ON pa.id = c.platform_account_id
+            WHERE c.id = ?
+        ");
+        $c->execute([$cid]);
+        $row = $c->fetch(PDO::FETCH_ASSOC);
+        if (!$row) { echo json_encode(['ok'=>false]); exit; }
+        $slug = $row['platform_slug'] ?? '';
+        $row['avatar_url'] = $row['customer_avatar']
+            ? (in_array($slug, ['facebook','instagram'])
+                ? SITE_URL . '/api/avatar-proxy.php?conv_id=' . $cid
+                : $row['customer_avatar'])
+            : '';
+        $row['initial'] = mb_strtoupper(mb_substr($row['customer_name'] ?: '?', 0, 1, 'UTF-8'), 'UTF-8');
+        $row['ok'] = true;
+        echo json_encode($row, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // Load messages (marks as read, supports since_id for polling)
     if ($_POST['ajax'] === 'messages') {
         $convId  = (int)$_POST['conv_id'];
@@ -1222,11 +1250,135 @@ function pollMessages(convId) {
 }
 
 
-/* ── Open conversation ─────────────────────────────────────────── */
-function openConv(id) {
-    // Navigate to conversation
-    window.location.href = `?status=<?= $statusFilter ?>&conv=${id}<?= $platformFilter?'&platform='.$platformFilter:'' ?>`;
+/* ── Open conversation (AJAX — no page reload) ─────────────────── */
+async function openConv(id) {
+    if (id === CONV_ID) return; // already open
+
+    // 1. Update active state in list
+    document.querySelectorAll('.conv-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.conv) === id);
+    });
+
+    // 2. Update URL without reload
+    const url = new URL(window.location.href);
+    url.searchParams.set('conv', id);
+    history.pushState({convId: id}, '', url.toString());
+
+    // 3. Mobile: slide to chat panel
+    document.getElementById('inboxWrap')?.classList.add('mob-chat');
+
+    // 4. Show skeleton loading in chat
+    const msgs = document.getElementById('chatMessages');
+    if (msgs) {
+        msgs.style.opacity = '0.4';
+        msgs.style.transition = 'opacity .18s';
+    }
+
+    // 5. Fetch conv info + messages in parallel
+    const [infoRes, msgRes] = await Promise.all([
+        fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({ajax:'conv_info', conv_id: id})}),
+        fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({ajax:'messages', conv_id: id})})
+    ]);
+    const info = await infoRes.json();
+    const msgList = await msgRes.json();
+
+    if (!info.ok) return;
+
+    // 6. Update global state
+    CONV_ID_CURRENT = id;
+    window.CONV_ID = id;
+    window.CUSTOMER_AVATAR  = info.avatar_url || '';
+    window.CUSTOMER_INITIAL = info.initial || '?';
+
+    // 7. Update chat header
+    updateChatHead(info, id);
+
+    // 8. Render messages
+    if (msgs) {
+        msgs.innerHTML = '';
+        msgs.style.opacity = '1';
+        lastMsgId = 0;
+        msgList.forEach(m => msgs.insertAdjacentHTML('beforeend', renderMsg(m)));
+        if (msgList.length) lastMsgId = Math.max(...msgList.map(m => parseInt(m.id)||0));
+        msgs.scrollTop = msgs.scrollHeight;
+        // Mark unread as 0 in list
+        const convItem = document.querySelector(`.conv-item[data-conv="${id}"]`);
+        if (convItem) {
+            convItem.classList.remove('unread');
+            const badge = convItem.querySelector('.conv-badge');
+            if (badge) badge.remove();
+        }
+    }
+
+    // 9. Update reply textarea placeholder
+    const ta = document.getElementById('replyTextarea');
+    if (ta) ta.value = '';
+
+    // 10. Restart polling
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => pollMessages(id), 1000);
+
+    // 11. Auto-fill tools panel
+    const oName = document.getElementById('oName');
+    if (oName && !oName.dataset.manual) oName.value = info.customer_name || '';
+    window.ACTIVE_CUSTOMER_CURRENT = info.customer_name || '';
 }
+
+function updateChatHead(info, convId) {
+    const head = document.querySelector('.chat-head');
+    if (!head) return;
+
+    // Avatar
+    const avatarDiv = head.querySelector('.conv-avatar');
+    if (avatarDiv) {
+        if (info.avatar_url) {
+            avatarDiv.innerHTML = `
+                <img src="${esc(info.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;">${esc(info.initial)}</span>`;
+            avatarDiv.style.background = '';
+        } else {
+            avatarDiv.innerHTML = esc(info.initial);
+            avatarDiv.style.background = info.platform_color
+                ? `linear-gradient(135deg,${info.platform_color},${adjustColorJS(info.platform_color)})`
+                : '';
+        }
+    }
+
+    // Name
+    const nameDiv = head.querySelector('.chat-head-name');
+    if (nameDiv) nameDiv.innerHTML = `<span class="live-dot" id="liveDot" title="Real-time"></span>${esc(info.customer_name || 'ไม่ระบุชื่อ')}`;
+
+    // Platform badge
+    const metaDiv = head.querySelector('.chat-head-meta');
+    if (metaDiv) {
+        let meta = '';
+        if (info.platform_name) meta += `<span style="background:${info.platform_color||'#888'};color:#fff;padding:3px 9px;border-radius:10px;font-size:0.68rem;">${esc(info.platform_name)}</span>`;
+        if (info.account_name) meta += `<span style="background:${info.account_color||'#888'};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">${esc(info.account_name)}</span>`;
+        metaDiv.innerHTML = meta + `<span class="text-muted" style="font-size:0.7rem;">UID: ${esc(info.customer_uid||'')}</span>
+            <span id="typingIndicator" style="display:none;font-size:0.72rem;color:#aaa;">กำลังพิมพ์<span class="typing-dot ms-1"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>`;
+    }
+
+    // Tools panel status select
+    const statusSel = document.getElementById('toolsStatusSel');
+    if (statusSel) {
+        statusSel.value = (info.status === 'closed') ? 'closed' : 'open';
+        statusSel.onchange = () => setStatus(convId, statusSel.value);
+    }
+}
+
+function adjustColorJS(hex) {
+    // Simple darken for gradient fallback
+    try {
+        let r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+        return `rgb(${Math.max(0,r-30)},${Math.max(0,g-30)},${Math.max(0,b-30)})`;
+    } catch { return hex; }
+}
+
+let CONV_ID_CURRENT = <?= $activeConvId ?: 'null' ?>;
+window.ACTIVE_CUSTOMER_CURRENT = <?= json_encode($activeConv['customer_name'] ?? '') ?>;
 
 /* ── Send reply ─────────────────────────────────────────────────── */
 function sendReply() {
