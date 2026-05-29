@@ -435,6 +435,51 @@ $platformColors = array_column($salesByPlatform, 'color');
         </div>
     </div>
 
+<?php if (isSuperAdmin()):
+    $diskTotal = disk_total_space('/');
+    $diskFree  = disk_free_space('/');
+    $diskUsed  = $diskTotal - $diskFree;
+    $pct       = $diskTotal > 0 ? round($diskUsed / $diskTotal * 100, 1) : 0;
+    $barColor  = $pct >= 90 ? '#ef4444' : ($pct >= 70 ? '#f97316' : '#22c55e');
+    $fmt = fn($b) => $b >= 1e9 ? round($b/1e9,2).' GB' : round($b/1e6,1).' MB';
+    $uploadsUsed = 0;
+    $uploadsDir  = __DIR__ . '/assets/uploads';
+    if (is_dir($uploadsDir)) {
+        $iter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($uploadsDir, FilesystemIterator::SKIP_DOTS));
+        foreach ($iter as $f) { $uploadsUsed += $f->getSize(); }
+    }
+?>
+<div style="max-width:520px;margin:24px auto 32px;padding:0 16px;">
+    <div style="background:#fff;border:1.5px solid #ede5f5;border-radius:16px;padding:18px 20px;box-shadow:0 2px 12px rgba(155,114,207,.08);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <span style="font-size:1.1rem;">🖥️</span>
+            <span style="font-weight:700;font-size:.9rem;color:#444;">พื้นที่ดิสก์เซิร์ฟเวอร์</span>
+            <span style="margin-left:auto;font-size:.68rem;background:#f0e7ff;color:#7c3aed;padding:2px 8px;border-radius:8px;font-weight:600;">superadmin only</span>
+        </div>
+
+        <!-- Progress bar -->
+        <div style="background:#f3f0f8;border-radius:99px;height:12px;overflow:hidden;margin-bottom:10px;">
+            <div style="width:<?= $pct ?>%;background:<?= $barColor ?>;height:100%;border-radius:99px;transition:width .4s;"></div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+                <span style="font-size:1.3rem;font-weight:800;color:<?= $barColor ?>;"><?= $pct ?>%</span>
+                <span style="font-size:.75rem;color:#888;margin-left:4px;">ใช้ไปแล้ว</span>
+            </div>
+            <div style="font-size:.78rem;color:#666;text-align:right;">
+                <div>ใช้ไป: <strong><?= $fmt($diskUsed) ?></strong> / <?= $fmt($diskTotal) ?></div>
+                <div>เหลือ: <strong style="color:<?= $barColor ?>;"><?= $fmt($diskFree) ?></strong></div>
+            </div>
+        </div>
+
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3ecfb;font-size:.75rem;color:#888;">
+            📁 คลังอัปโหลด (uploads/): <strong><?= $fmt($uploadsUsed) ?></strong>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 </div><!-- end container -->
 
 <?php
