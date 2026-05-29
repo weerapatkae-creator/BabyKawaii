@@ -30,7 +30,7 @@ $uid   = $data['customer_uid'];
 $token = $data['page_access_token'] ?? '';
 
 // สร้าง URL ดึงรูปจาก Graph API พร้อม access token
-$url = "https://graph.facebook.com/{$uid}/picture?type=normal&redirect=true"
+$url = "https://graph.facebook.com/v19.0/{$uid}/picture?type=normal"
      . ($token ? '&access_token=' . urlencode($token) : '');
 
 $ch = curl_init($url);
