@@ -370,12 +370,13 @@ function resizeAndUpload(file, idx, total, sumEl) {
             const objUrl = URL.createObjectURL(file);
 
             imgEl.onerror = () => {
+                imgEl.onerror = imgEl.onload = null; // กัน double-fire
                 URL.revokeObjectURL(objUrl);
-                // fallback: upload original ถ้า decode ไม่ได้
                 doUpload(file, file.name);
             };
 
             imgEl.onload = () => {
+                imgEl.onerror = imgEl.onload = null; // กัน double-fire (imgEl.src='' triggers onerror)
                 try {
                     let w = imgEl.naturalWidth  || imgEl.width  || 0;
                     let h = imgEl.naturalHeight || imgEl.height || 0;
@@ -389,11 +390,7 @@ function resizeAndUpload(file, idx, total, sumEl) {
                     const c = document.createElement('canvas');
                     c.width = w || 1; c.height = h || 1;
                     c.getContext('2d').drawImage(imgEl, 0, 0, c.width, c.height);
-
-                    // revoke SETELAH draw
                     URL.revokeObjectURL(objUrl);
-                    // clear img ref
-                    imgEl.src = '';
 
                     c.toBlob(blob => {
                         c.width = c.height = 0; // free canvas memory
