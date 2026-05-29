@@ -4,8 +4,47 @@ require_once __DIR__ . '/../config/database.php';
 requireLogin();
 
 $uploadDir = UPLOAD_PATH . 'products/';
+$thumbDir  = UPLOAD_PATH . 'products/thumbs/';
 $uploadUrl = UPLOAD_URL  . 'products/';
+$thumbUrl  = UPLOAD_URL  . 'products/thumbs/';
 $allowed   = ['jpg','jpeg','png','webp','gif'];
+
+// ── Thumbnail generator (300×300 crop center) ─────────────────────────────────
+function makeThumb(string $src, string $dest, int $size = 300): bool {
+    $info = @getimagesize($src);
+    if (!$info) return false;
+    [$w, $h, $type] = $info;
+    $img = match($type) {
+        IMAGETYPE_JPEG => @imagecreatefromjpeg($src),
+        IMAGETYPE_PNG  => @imagecreatefrompng($src),
+        IMAGETYPE_WEBP => @imagecreatefromwebp($src),
+        IMAGETYPE_GIF  => @imagecreatefromgif($src),
+        default        => false,
+    };
+    if (!$img) return false;
+
+    // crop square from center
+    $side = min($w, $h);
+    $x    = (int)(($w - $side) / 2);
+    $y    = (int)(($h - $side) / 2);
+    $thumb = imagecreatetruecolor($size, $size);
+    // preserve transparency for PNG/GIF
+    if (in_array($type, [IMAGETYPE_PNG, IMAGETYPE_GIF])) {
+        imagealphablending($thumb, false);
+        imagesavealpha($thumb, true);
+        $trans = imagecolorallocatealpha($thumb, 255, 255, 255, 127);
+        imagefill($thumb, 0, 0, $trans);
+    }
+    imagecopyresampled($thumb, $img, 0, 0, $x, $y, $size, $size, $side, $side);
+    $ok = imagejpeg($thumb, $dest, 82);
+    imagedestroy($img);
+    imagedestroy($thumb);
+    return $ok;
+}
+
+function thumbPath(string $filename, string $thumbDir): string {
+    return $thumbDir . pathinfo($filename, PATHINFO_FILENAME) . '.jpg';
+}
 
 // ── AJAX: upload single file ─────────────────────────────────────────────────
 if (isset($_POST['ajax_upload'])) {
@@ -20,10 +59,13 @@ if (isset($_POST['ajax_upload'])) {
         echo json_encode(['ok'=>false,'msg'=>'ไฟล์ไม่รองรับ']);
         exit;
     }
-    $dest = $uploadDir . 'product_' . time() . '_' . uniqid() . '.' . $ext;
+    $filename = 'product_' . time() . '_' . uniqid() . '.' . $ext;
+    $dest     = $uploadDir . $filename;
     if (move_uploaded_file($f['tmp_name'], $dest)) {
-        $filename = basename($dest);
-        echo json_encode(['ok'=>true,'filename'=>$filename,'url'=>$uploadUrl.$filename]);
+        $tPath = thumbPath($filename, $thumbDir);
+        makeThumb($dest, $tPath);
+        $tUrl = file_exists($tPath) ? ($thumbUrl . basename($tPath)) : ($uploadUrl . $filename);
+        echo json_encode(['ok'=>true,'filename'=>$filename,'url'=>$uploadUrl.$filename,'thumb'=>$tUrl]);
     } else {
         echo json_encode(['ok'=>false,'msg'=>'บันทึกไฟล์ไม่ได้']);
     }
@@ -34,7 +76,11 @@ if (isset($_POST['ajax_upload'])) {
 if (isset($_GET['delete'])) {
     $file = basename($_GET['delete']);
     $path = $uploadDir . $file;
-    if ($file && file_exists($path) && is_file($path)) unlink($path);
+    if ($file && file_exists($path) && is_file($path)) {
+        unlink($path);
+        $tp = thumbPath($file, $thumbDir);
+        if (file_exists($tp)) unlink($tp);
+    }
     header('Location: ' . SITE_URL . '/pages/product-gallery.php');
     exit;
 }
@@ -53,13 +99,17 @@ if (isset($_GET['ajax_list'])) {
     }
     usort($all, fn($a,$b) => $b['mtime'] - $a['mtime']);
     $total = count($all);
-    $items = array_map(fn($f) => [
-        'name' => $f['name'],
-        'url'  => $uploadUrl . $f['name'],
-        'size' => $f['size'] >= 1048576
-            ? round($f['size']/1048576,1).' MB'
-            : round($f['size']/1024).' KB',
-    ], array_slice($all, ($page-1)*$per, $per));
+    $items = array_map(function($f) use ($uploadUrl,$thumbUrl,$thumbDir) {
+        $tp = thumbPath($f['name'], $thumbDir);
+        return [
+            'name'  => $f['name'],
+            'url'   => $uploadUrl . $f['name'],
+            'thumb' => file_exists($tp) ? ($thumbUrl . basename($tp)) : ($uploadUrl . $f['name']),
+            'size'  => $f['size'] >= 1048576
+                ? round($f['size']/1048576,1).' MB'
+                : round($f['size']/1024).' KB',
+        ];
+    }, array_slice($all, ($page-1)*$per, $per));
     echo json_encode(['items'=>$items,'total'=>$total,'page'=>$page,'per'=>$per]);
     exit;
 }
@@ -75,7 +125,12 @@ foreach (glob($uploadDir . '*.{jpg,jpeg,png,webp,gif}', GLOB_BRACE) as $path) {
 }
 usort($allFiles, fn($a,$b) => $b['mtime'] - $a['mtime']);
 $totalFiles = count($allFiles);
-$files = array_slice($allFiles, 0, $PER);
+$files = array_map(function($f) use ($uploadUrl,$thumbUrl,$thumbDir) {
+    $tp = thumbPath($f['name'], $thumbDir);
+    $f['url']   = $uploadUrl . $f['name'];
+    $f['thumb'] = file_exists($tp) ? ($thumbUrl . basename($tp)) : ($uploadUrl . $f['name']);
+    return $f;
+}, array_slice($allFiles, 0, $PER));
 $fmtSize = fn($b) => $b >= 1048576 ? round($b/1048576,1).' MB' : round($b/1024).' KB';
 
 require_once __DIR__ . '/../includes/header.php';
@@ -179,7 +234,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div id="gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;">
 <?php foreach ($files as $f): ?>
 <div class="gal-card">
-    <img src="<?= htmlspecialchars($uploadUrl.$f['name']) ?>" loading="lazy" alt="" decoding="async">
+    <img src="<?= htmlspecialchars($f['thumb']) ?>" loading="lazy" alt="" decoding="async">
     <div class="gal-card-meta">
         <div class="fn"><?= htmlspecialchars($f['name']) ?></div>
         <div class="sz"><?= $fmtSize($f['size']) ?></div>
@@ -266,7 +321,7 @@ function uploadFile(file, item) {
             if (res.ok) {
                 item.el.classList.add('done');
                 if (st) st.textContent = '✓';
-                addToGallery(res.filename, res.url);
+                addToGallery(res.filename, res.url, res.thumb);
             } else {
                 item.el.classList.add('error');
                 if (st) st.textContent = 'ผิดพลาด';
@@ -289,7 +344,7 @@ function uploadFile(file, item) {
     xhr.send(fd);
 }
 
-function addToGallery(filename, url) {
+function addToGallery(filename, url, thumb) {
     const empty = document.getElementById('emptyMsg');
     if (empty) empty.remove();
 
@@ -298,7 +353,7 @@ function addToGallery(filename, url) {
 
     const card = document.createElement('div');
     card.className = 'gal-card';
-    card.innerHTML = `<img src="${url}" loading="lazy">
+    card.innerHTML = `<img src="${thumb||url}" loading="lazy" decoding="async">
         <div class="gal-card-meta">
             <div class="fn">${filename}</div>
         </div>
@@ -338,7 +393,7 @@ async function loadMore() {
     data.items.forEach(item => {
         const card = document.createElement('div');
         card.className = 'gal-card';
-        card.innerHTML = `<img src="${item.url}" loading="lazy" decoding="async" alt="">
+        card.innerHTML = `<img src="${item.thumb||item.url}" loading="lazy" decoding="async" alt="">
             <div class="gal-card-meta">
                 <div class="fn">${item.name}</div>
                 <div class="sz">${item.size}</div>
