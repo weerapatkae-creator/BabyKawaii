@@ -718,7 +718,8 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 .order-card:hover { box-shadow:0 3px 10px rgba(44,42,48,.09); }
 .ls-bar-wrap { background:#efe9ee; border-radius:4px; height:5px; flex:1; overflow:hidden; }
 .ls-bar-fill { height:100%; border-radius:4px; transition:width .3s; }
-#btnTools.active { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border-color:transparent; }
+#btnTools.active { background:linear-gradient(135deg,#9B72CF,#7c5cbf); color:#fff; border-color:transparent; }
+#btnTools:hover:not(.active) { background:#f5f0fb; border-color:#d4c4ef; }
 /* Tools pane padding for cards */
 #productResults, #orderResults, #lowStockResults { padding:8px 0 12px; display:flex; flex-direction:column; }
 
@@ -921,8 +922,10 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
                         </span>
                     </div>
                 </div>
-                <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" title="เครื่องมือ" style="padding:6px 9px;flex-shrink:0;">
-                    <i class="fas fa-sliders"></i>
+                <button onclick="toggleTools()" id="btnTools" title="เครื่องมือ"
+                        style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1.5px solid #efe9ee;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:0.76rem;font-weight:600;color:#8a6db0;transition:all .15s;flex-shrink:0;">
+                    <i class="fas fa-toolbox" style="font-size:0.82rem;"></i>
+                    <span class="d-none d-sm-inline">เครื่องมือ</span>
                 </button>
             </div>
 
@@ -971,8 +974,10 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
                     <div class="chat-head-name"><span class="live-dot" id="liveDot"></span><span id="chatHeadName">—</span></div>
                     <div class="chat-head-meta d-flex align-items-center gap-2 flex-wrap" id="chatHeadMeta"></div>
                 </div>
-                <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" title="เครื่องมือ" style="padding:6px 9px;flex-shrink:0;">
-                    <i class="fas fa-sliders"></i>
+                <button onclick="toggleTools()" id="btnTools" title="เครื่องมือ"
+                        style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1.5px solid #efe9ee;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:0.76rem;font-weight:600;color:#8a6db0;transition:all .15s;flex-shrink:0;">
+                    <i class="fas fa-toolbox" style="font-size:0.82rem;"></i>
+                    <span class="d-none d-sm-inline">เครื่องมือ</span>
                 </button>
             </div>
             <div class="chat-messages" id="chatMessages" style="display:none;"></div>
