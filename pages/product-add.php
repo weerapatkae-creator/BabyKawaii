@@ -571,10 +571,10 @@ $currentType = $product['product_type'] ?? 'single';
 </form>
 
 <!-- ── Media Picker Modal ──────────────────────────────────────────────────── -->
-<div class="modal fade" id="mediaPickerModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content" style="border-radius:16px;border:none;">
-            <div class="modal-header" style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;border:none;border-radius:16px 16px 0 0;padding:14px 20px;">
+<div class="modal fade" id="mediaPickerModal" tabindex="-1" style="z-index:9999;">
+    <div class="modal-dialog modal-xl" style="margin:1rem auto;">
+        <div class="modal-content" style="border-radius:16px;border:none;max-height:90vh;display:flex;flex-direction:column;">
+            <div class="modal-header" style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;border:none;border-radius:16px 16px 0 0;padding:14px 20px;flex-shrink:0;">
                 <div style="display:flex;align-items:center;gap:12px;flex:1;">
                     <h5 class="modal-title mb-0" style="font-size:.95rem;"><i class="fas fa-images me-2"></i>คลังรูปภาพ</h5>
                     <input type="text" id="mpSearch" class="form-control form-control-sm"
@@ -583,19 +583,21 @@ $currentType = $product['product_type'] ?? 'single';
                 </div>
                 <button type="button" class="btn-close btn-close-white ms-3" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-3" style="background:#f8f5fc;">
-                <div id="mpGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;"></div>
+            <div style="overflow-y:auto;flex:1;padding:12px;background:#f8f5fc;border-radius:0 0 16px 16px;">
+                <div id="mpLoading" style="display:none;text-align:center;padding:48px;color:#aaa;">
+                    <div class="spinner-border spinner-border-sm"></div>
+                    <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
+                </div>
                 <div id="mpEmpty" style="display:none;text-align:center;padding:48px 16px;color:#bbb;">
                     <div style="font-size:2.5rem;">🖼️</div>
                     <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
-                    <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank" class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
+                    <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank"
+                       class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
                         ไปคลังรูปสินค้า <i class="fas fa-external-link-alt ms-1"></i>
                     </a>
                 </div>
-                <div id="mpLoading" style="text-align:center;padding:48px;color:#bbb;">
-                    <div class="spinner-border spinner-border-sm"></div><br>
-                    <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
-                </div>
+                <div id="mpGrid" onclick="mpGridClick(event)"
+                     style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;"></div>
                 <div id="mpLoadMore" style="display:none;text-align:center;padding:12px;">
                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="mpLoad(mpPage+1)">
                         โหลดเพิ่ม
@@ -748,14 +750,13 @@ $currentType = $product['product_type'] ?? 'single';
 /* ── Media picker grid ─────────────────────────────────────── */
 .mp-item {
     position: relative; cursor: pointer; border-radius: 10px;
-    overflow: hidden; aspect-ratio: 1; background: #e8e0f0;
+    overflow: hidden; aspect-ratio: 1/1; background: #e8e0f0;
     border: 2.5px solid transparent; transition: border-color .15s, transform .12s;
-    padding: 0; display: block; width: 100%;
-    -webkit-tap-highlight-color: rgba(233,30,140,.2);
+    user-select: none; -webkit-tap-highlight-color: rgba(233,30,140,.3);
 }
-.mp-item:hover, .mp-item:focus { border-color: #E91E8C; transform: scale(1.03); outline: none; }
-.mp-item:active { transform: scale(.97); border-color: #E91E8C; }
-.mp-item img   { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mp-item:hover { border-color: #E91E8C; transform: scale(1.03); }
+.mp-item:active { transform: scale(.96); border-color: #c2185b; }
+.mp-item img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
 .mp-item-title {
     position: absolute; bottom: 0; left: 0; right: 0;
     background: linear-gradient(transparent, rgba(0,0,0,.55));
@@ -1171,29 +1172,28 @@ async function mpLoad(page) {
         document.getElementById('mpEmpty').style.display = 'block'; return;
     }
     data.items.forEach(item => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'mp-item';
-        btn.dataset.filename = item.filename;
-        btn.dataset.url      = item.url;
-        btn.innerHTML = `<img src="${item.url}" alt="" style="pointer-events:none;width:100%;height:100%;object-fit:cover;display:block;">
-            <div class="mp-item-title" style="pointer-events:none;">${item.title}</div>`;
-        grid.appendChild(btn);
+        const fn  = item.filename.replace(/'/g,"&#39;");
+        const url = item.url.replace(/'/g,"&#39;");
+        const div = document.createElement('div');
+        div.className = 'mp-item';
+        div.setAttribute('data-filename', item.filename);
+        div.setAttribute('data-url', item.url);
+        div.innerHTML = `<img src="${item.url}" alt="" loading="lazy">
+            <div class="mp-item-title">${item.title}</div>`;
+        grid.appendChild(div);
     });
-    // event delegation — ใช้ grid เป็น listener เดียว แทน per-item
-    if (!grid._hasListener) {
-        grid.addEventListener('click', e => {
-            const btn = e.target.closest('.mp-item');
-            if (btn) selectMediaImage(btn.dataset.filename, btn.dataset.url);
-        });
-        grid._hasListener = true;
-    }
     mpPage = page;
     const loaded = grid.children.length;
     if (loaded < data.total) {
         document.getElementById('mpLoadMore').style.display = 'block';
         document.querySelector('#mpLoadMore button').onclick = () => mpLoad(mpPage + 1);
     }
+}
+
+function mpGridClick(e) {
+    const item = e.target.closest('.mp-item');
+    if (!item) return;
+    selectMediaImage(item.dataset.filename, item.dataset.url);
 }
 
 function selectMediaImage(filename, url) {
