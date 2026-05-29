@@ -29,11 +29,17 @@ if (!function_exists('fetchFbProfile')) {
 
         $name = null;
         if (!empty($conv['data'][0]['participants']['data'])) {
+            // หา participant ที่ id ตรงกับ customer_uid
             foreach ($conv['data'][0]['participants']['data'] as $p) {
-                // หาชื่อที่ไม่ใช่ Page (email ว่าง = ลูกค้า)
-                if (empty($p['email'])) {
+                if (($p['id'] ?? '') === $userId) {
                     $name = $p['name'] ?? null;
                     break;
+                }
+            }
+            // fallback: เอาคนแรกที่มีชื่อ
+            if (!$name) {
+                foreach ($conv['data'][0]['participants']['data'] as $p) {
+                    if (!empty($p['name'])) { $name = $p['name']; break; }
                 }
             }
         }

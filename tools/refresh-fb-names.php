@@ -43,9 +43,19 @@ foreach ($rows as $row) {
 
     if (!empty($data['data'][0]['participants']['data'])) {
         foreach ($data['data'][0]['participants']['data'] as $p) {
-            if (empty($p['email'])) { // ข้ามเพจ (มี email), เอาแค่ลูกค้า
+            // หา participant ที่ id ตรงกับ customer_uid
+            if (($p['id'] ?? '') === $row['customer_uid']) {
                 $name = $p['name'] ?? null;
                 break;
+            }
+        }
+        // ถ้ายังไม่เจอ เอาคนแรกที่ไม่ใช่ Page (name ไม่ว่าง)
+        if (!$name) {
+            foreach ($data['data'][0]['participants']['data'] as $p) {
+                if (!empty($p['name'])) {
+                    $name = $p['name'];
+                    break;
+                }
             }
         }
     }
