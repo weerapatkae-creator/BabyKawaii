@@ -163,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         $qLike = "%$q%";
         if ($q === '') {
             $stmt = $pdo->prepare("
-                SELECT p.id,p.name,p.sku,p.selling_price,p.main_image,p.status,
+                SELECT p.id,p.name,p.sku,p.selling_price,p.main_image,p.status,p.product_type,
                        COALESCE(SUM(s.quantity),0) AS total_stock
                 FROM products p LEFT JOIN stock s ON s.product_id=p.id
                 WHERE p.status IN ('active','out_of_stock')
@@ -188,41 +188,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         if ($prods) {
             $ids = implode(',', array_map('intval', array_column($prods,'id')));
 
-            // ดึงสต็อกดิบ
-            $stockRows = $pdo->query("
-                SELECT product_id, size, color, quantity, min_alert
-                FROM stock WHERE product_id IN ($ids)
-                ORDER BY product_id,
-                  FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            // committed stock = จำนวนที่ถูกเอาไปจัดเซตแล้ว
-            // bundle_items.quantity = จำนวนชิ้นจริงที่อยู่ในเซต (ไม่ใช่ต่อ 1 เซต)
-            $committedMap = [];
-            $bundleStmt = $pdo->query("
-                SELECT bi.product_id, bi.size, bi.color,
-                       SUM(bi.quantity) AS committed
-                FROM bundle_items bi
-                JOIN products bp ON bp.id = bi.bundle_id AND bp.status = 'active'
-                WHERE bi.product_id IN ($ids)
-                GROUP BY bi.product_id, bi.size, bi.color
-            ");
-            foreach ($bundleStmt->fetchAll(PDO::FETCH_ASSOC) as $b) {
-                $committedMap[$b['product_id']][$b['size']][$b['color']] = (int)$b['committed'];
+            // แยก single vs bundle products
+            $singleIds = []; $bundleIds = [];
+            foreach ($prods as $p) {
+                if (($p['product_type'] ?? 'single') === 'bundle') $bundleIds[] = (int)$p['id'];
+                else $singleIds[] = (int)$p['id'];
             }
 
+            // ── SINGLE: ดึงสต็อก + หัก committed ─────────────────────
             $stockMap = [];
-            foreach ($stockRows as $sr) {
-                $committed   = $committedMap[$sr['product_id']][$sr['size']][$sr['color']] ?? 0;
-                $sr['quantity_raw']       = (int)$sr['quantity'];
-                $sr['quantity_committed'] = $committed;
-                $sr['quantity_available'] = max(0, (int)$sr['quantity'] - $committed);
-                $stockMap[$sr['product_id']][] = $sr;
+            if ($singleIds) {
+                $singleIdStr = implode(',', $singleIds);
+                $stockRows = $pdo->query("
+                    SELECT product_id, size, color, quantity, min_alert
+                    FROM stock WHERE product_id IN ($singleIdStr)
+                    ORDER BY product_id,
+                      FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
+                ")->fetchAll(PDO::FETCH_ASSOC);
+
+                // committed = จำนวนที่ถูกเอาไปจัดเซตแล้ว
+                $committedMap = [];
+                $cm = $pdo->query("
+                    SELECT bi.product_id, bi.size, bi.color, SUM(bi.quantity) AS committed
+                    FROM bundle_items bi
+                    JOIN products bp ON bp.id = bi.bundle_id AND bp.status = 'active'
+                    WHERE bi.product_id IN ($singleIdStr)
+                    GROUP BY bi.product_id, bi.size, bi.color
+                ");
+                foreach ($cm->fetchAll(PDO::FETCH_ASSOC) as $b) {
+                    $committedMap[$b['product_id']][$b['size']][$b['color']] = (int)$b['committed'];
+                }
+
+                foreach ($stockRows as $sr) {
+                    $committed = $committedMap[$sr['product_id']][$sr['size']][$sr['color']] ?? 0;
+                    $sr['quantity_committed'] = $committed;
+                    $sr['quantity_available'] = max(0, (int)$sr['quantity'] - $committed);
+                    $stockMap[$sr['product_id']][] = $sr;
+                }
+            }
+
+            // ── BUNDLE: คำนวณ virtual stock จาก components ────────────
+            $bundleVirtualMap = []; // bundle_id => virtual_sets (จำนวนเซตที่ทำได้)
+            if ($bundleIds) {
+                $bundleIdStr = implode(',', $bundleIds);
+                // virtual_sets = MIN(floor(component_stock / qty_per_set)) across all components
+                $vRows = $pdo->query("
+                    SELECT bi.bundle_id,
+                           MIN(FLOOR(COALESCE(s.quantity,0) / bi.quantity)) AS virtual_sets
+                    FROM bundle_items bi
+                    LEFT JOIN stock s ON s.product_id = bi.product_id
+                        AND (bi.size  = '' OR s.size  = bi.size)
+                        AND (bi.color = '' OR s.color = bi.color)
+                    WHERE bi.bundle_id IN ($bundleIdStr)
+                    GROUP BY bi.bundle_id
+                ")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($vRows as $v) {
+                    $bundleVirtualMap[(int)$v['bundle_id']] = max(0, (int)$v['virtual_sets']);
+                }
             }
 
             foreach ($prods as &$p) {
-                $p['image_url'] = $p['main_image'] ? (UPLOAD_URL . 'products/' . $p['main_image']) : '';
-                $p['stocks']    = $stockMap[$p['id']] ?? [];
+                $p['image_url']    = $p['main_image'] ? (UPLOAD_URL . 'products/' . $p['main_image']) : '';
+                $p['product_type'] = $p['product_type'] ?? 'single';
+
+                if ($p['product_type'] === 'bundle') {
+                    $sets = $bundleVirtualMap[(int)$p['id']] ?? 0;
+                    // bundle แสดงเป็น "เซต" 1 ไซส์เดียว
+                    $p['stocks'] = $sets > 0 ? [[
+                        'size'               => 'เซต',
+                        'color'              => '',
+                        'quantity'           => $sets,
+                        'quantity_available' => $sets,
+                        'quantity_committed' => 0,
+                        'min_alert'          => 1,
+                    ]] : [];
+                } else {
+                    $p['stocks'] = $stockMap[$p['id']] ?? [];
+                }
             }
         }
         echo json_encode($prods, JSON_UNESCAPED_UNICODE); exit;
