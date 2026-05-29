@@ -1,6 +1,6 @@
 /* ===== BabyKawaii — Orders / Sales ===== */
 
-function Orders({ go, orders = window.BK_DATA.orders }) {
+function Orders({ go, orders = window.BK_DATA.orders, onAdvanceOrder }) {
   const d = window.BK_DATA;
   const [status, setStatus] = React.useState("all");
   const counts = orders.reduce((m, o) => { m[o.status] = (m[o.status] || 0) + 1; return m; }, {});
@@ -38,7 +38,13 @@ function Orders({ go, orders = window.BK_DATA.orders }) {
                   <td className="bk-muted bk-num" style={{ fontSize: ".8rem" }}>{o.date} {o.time}</td>
                   <td><StatusBadge status={o.status} /></td>
                   <td className="bk-td-r">
-                    <button className="bk-iconbtn" style={{ width: 30, height: 30, display: "inline-flex" }}><BKIcon name="chevronRight" size={15} /></button>
+                    <button
+                      className="bk-iconbtn"
+                      title={o.status === "delivered" ? "Done" : "Move to next status"}
+                      onClick={() => onAdvanceOrder && onAdvanceOrder(o.id)}
+                      style={{ width: 30, height: 30, display: "inline-flex" }}>
+                      <BKIcon name="chevronRight" size={15} />
+                    </button>
                   </td>
                 </tr>
               ))}

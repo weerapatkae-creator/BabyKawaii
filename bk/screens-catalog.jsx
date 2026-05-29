@@ -89,8 +89,13 @@ function Products({ go }) {
   );
 }
 
-function ProductAdd({ go }) {
+function ProductAdd({ go, onSaveProduct }) {
   const d = window.BK_DATA;
+  const nextId = Math.max(0, ...d.products.map((p) => p.id || 0)) + 1;
+  const [name, setName] = useState("บอดี้สูทแขนยาว ลายกระต่าย");
+  const [sku, setSku] = useState(`BK-${1000 + nextId * 7}`);
+  const [brand, setBrand] = useState("คอตตอน 100%");
+  const [stock, setStock] = useState(24);
   const [cat, setCat] = useState("บอดี้สูท");
   const [price, setPrice] = useState(290);
   const [cost, setCost] = useState(120);
@@ -98,12 +103,15 @@ function ProductAdd({ go }) {
   const profit = price - cost;
   const margin = price > 0 ? Math.round((profit / price) * 100) : 0;
   const toggleSize = (s) => setActiveSizes((a) => a.includes(s) ? a.filter(x => x !== s) : [...a, s]);
+  const saveProduct = () => {
+    onSaveProduct && onSaveProduct({ name, sku, brand, category: cat, price, cost, stock });
+  };
 
   return (
     <div className="bk-page">
       <PageHead title="เพิ่มสินค้าใหม่" sub="กรอกรายละเอียดสินค้า รูปภาพ และจัดการสต็อกตามไซต์">
         <button className="bk-btn bk-btn--ghost" onClick={() => go("products")}>ยกเลิก</button>
-        <button className="bk-btn bk-btn--primary" onClick={() => go("products")}><BKIcon name="check" size={15} /> บันทึกสินค้า</button>
+        <button className="bk-btn bk-btn--primary" onClick={saveProduct} disabled={!name.trim()}><BKIcon name="check" size={15} /> บันทึกสินค้า</button>
       </PageHead>
 
       <div className="bk-grid-2" style={{ alignItems: "start" }}>
@@ -111,16 +119,16 @@ function ProductAdd({ go }) {
           <Card title="ข้อมูลสินค้า" emoji="👕">
             <div className="bk-field">
               <label className="bk-label">ชื่อสินค้า</label>
-              <input className="bk-input" defaultValue="บอดี้สูทแขนยาว ลายกระต่าย" />
+              <input className="bk-input" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div className="bk-field">
                 <label className="bk-label">รหัสสินค้า (SKU)</label>
-                <input className="bk-input bk-num" defaultValue="BK-1007" />
+                <input className="bk-input bk-num" value={sku} onChange={(e) => setSku(e.target.value)} />
               </div>
               <div className="bk-field">
                 <label className="bk-label">แบรนด์ผ้า</label>
-                <input className="bk-input" defaultValue="คอตตอน 100%" />
+                <input className="bk-input" value={brand} onChange={(e) => setBrand(e.target.value)} />
               </div>
             </div>
             <div className="bk-field" style={{ marginBottom: 0 }}>
@@ -130,6 +138,10 @@ function ProductAdd({ go }) {
                   <button key={c} className={"bk-chip" + (cat === c ? " is-on" : "")} onClick={() => setCat(c)}>{c}</button>
                 ))}
               </div>
+            </div>
+            <div className="bk-field" style={{ marginTop: 14, marginBottom: 0 }}>
+              <label className="bk-label">สต็อกเริ่มต้นรวม</label>
+              <input className="bk-input bk-num" type="number" min="0" value={stock} onChange={(e) => setStock(+e.target.value)} />
             </div>
           </Card>
 
@@ -200,7 +212,7 @@ function ProductAdd({ go }) {
 
 function sizeTone(q) { return q === 0 ? "out" : q <= 5 ? "low" : "ok"; }
 
-function Stock({ go }) {
+function Stock({ go, onRestock }) {
   const d = window.BK_DATA;
   const [filter, setFilter] = useState("all");
   const rows = d.products.map((p) => {
@@ -213,7 +225,7 @@ function Stock({ go }) {
     <div className="bk-page">
       <PageHead title="จัดการสต็อก" sub={`สต็อกรวม ${fmtNum(d.kpis.stockTotal)} ชิ้น · ใกล้หมด ${d.kpis.lowStock} รายการ`}>
         <button className="bk-btn bk-btn--ghost"><BKIcon name="download" size={15} /> นำเข้า Excel</button>
-        <button className="bk-btn bk-btn--primary"><BKIcon name="plus" size={15} /> เติมสต็อก</button>
+        <button className="bk-btn bk-btn--primary" onClick={() => filtered.forEach((row) => onRestock && onRestock(row.id, 10))}><BKIcon name="plus" size={15} /> เติมสต็อก</button>
       </PageHead>
 
       <div className="bk-stats" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: "var(--gap)" }}>
@@ -263,7 +275,7 @@ function Stock({ go }) {
                     </div>
                   </td>
                   <td className="bk-num bk-td-r" style={{ fontWeight: 700 }}>{r.stock}</td>
-                  <td className="bk-td-r"><button className="bk-btn bk-btn--soft bk-btn--sm">เติมสต็อก</button></td>
+                  <td className="bk-td-r"><button className="bk-btn bk-btn--soft bk-btn--sm" onClick={() => onRestock && onRestock(r.id, 10)}>เติมสต็อก +10</button></td>
                 </tr>
               ))}
             </tbody>

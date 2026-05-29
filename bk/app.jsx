@@ -19,26 +19,33 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "emoji": true
 }/*EDITMODE-END*/;
 
+const BK_BASE_DATA = window.BK_BASE_DATA || window.BK_DATA;
+window.BK_BASE_DATA = BK_BASE_DATA;
+
+function loadBKState(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function productStatus(stock) {
+  return stock <= 0 ? "out" : stock <= 5 ? "low" : "active";
+}
+
+function customerTier(orders) {
+  return orders >= 15 ? "VIP" : orders >= 7 ? "เธเธฃเธฐเธเธณ" : "เนเธซเธกเน";
+}
+
 function BKApp() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [page, setPage] = React.useState("dashboard");
   const [sbOpen, setSbOpen] = React.useState(false);
-  const [orders, setOrders] = React.useState(() => {
-    try {
-      const saved = localStorage.getItem("bk-orders");
-      return saved ? JSON.parse(saved) : window.BK_DATA.orders;
-    } catch (e) {
-      return window.BK_DATA.orders;
-    }
-  });
-  const [products, setProducts] = React.useState(() => {
-    try {
-      const saved = localStorage.getItem("bk-products");
-      return saved ? JSON.parse(saved) : window.BK_DATA.products;
-    } catch (e) {
-      return window.BK_DATA.products;
-    }
-  });
+  const [orders, setOrders] = React.useState(() => loadBKState("bk-orders", BK_BASE_DATA.orders));
+  const [products, setProducts] = React.useState(() => loadBKState("bk-products", BK_BASE_DATA.products));
+  const [customers, setCustomers] = React.useState(() => loadBKState("bk-customers", BK_BASE_DATA.customerList));
 
   const dir = DIR_MAP[t.direction] || "a";
   const theme = t.theme === "มืด" ? "dark" : "light";
@@ -58,30 +65,58 @@ function BKApp() {
     localStorage.setItem("bk-products", JSON.stringify(products));
   }, [products]);
 
+  React.useEffect(() => {
+    localStorage.setItem("bk-customers", JSON.stringify(customers));
+  }, [customers]);
+
   const liveData = React.useMemo(() => {
     const stockTotal = products.reduce((sum, product) => sum + product.stock, 0);
+    const salesTotal = orders.reduce((sum, order) => order.status === "cancelled" ? sum : sum + order.total, 0);
+    const platforms = BK_BASE_DATA.platforms.map((platform) => {
+      const platformOrders = orders.filter((order) => order.platform && order.platform.key === platform.key && order.status !== "cancelled");
+      const total = platformOrders.reduce((sum, order) => sum + order.total, 0);
+      return {
+        ...platform,
+        total: total || platform.total,
+        orders: platformOrders.length || platform.orders,
+        share: salesTotal ? Math.round(((total || platform.total) / salesTotal) * 100) : platform.share,
+      };
+    });
     const lowStockItems = products
       .filter((product) => product.stock <= 5)
       .map((product) => ({
         name: product.name,
         sku: product.sku,
-        size: window.BK_DATA.sizes[(product.id + 1) % window.BK_DATA.sizes.length],
-        color: window.BK_DATA.colorsTH[product.id % window.BK_DATA.colorsTH.length],
+        size: BK_BASE_DATA.sizes[(product.id + 1) % BK_BASE_DATA.sizes.length],
+        color: BK_BASE_DATA.colorsTH[product.id % BK_BASE_DATA.colorsTH.length],
         qty: product.stock,
       }));
+    const activeOrders = orders.filter((order) => order.status !== "cancelled");
+    const grossProfitMonth = activeOrders.reduce((sum, order) => {
+      const product = products.find((p) => p.name === order.product);
+      return sum + (product ? Math.max(0, product.price - product.cost) * (order.items || 1) : Math.round(order.total * .55));
+    }, 0);
     return {
-      ...window.BK_DATA,
+      ...BK_BASE_DATA,
+      platforms,
       products,
+      orders,
+      customerList: customers,
       bestSellers: [...products].sort((a, b) => b.sold - a.sold).slice(0, 5),
       lowStockItems,
       kpis: {
-        ...window.BK_DATA.kpis,
+        ...BK_BASE_DATA.kpis,
         products: products.length,
         stockTotal,
+        salesMonth: salesTotal,
+        ordersMonth: activeOrders.length,
+        aov: activeOrders.length ? Math.round(salesTotal / activeOrders.length) : 0,
+        grossProfitMonth,
         lowStock: lowStockItems.length,
+        pending: orders.filter((order) => order.status === "pending").length,
       },
     };
-  }, [products]);
+  }, [products, orders, customers]);
   window.BK_DATA = liveData;
 
   const toggleTheme = () => setTweak("theme", theme === "dark" ? "สว่าง" : "มืด");
@@ -111,7 +146,62 @@ function BKApp() {
     };
     setOrders((list) => [order, ...list]);
     setProducts((list) => list.map((item) => item.id === product.id ? { ...item, stock: Math.max(0, item.stock - qty), status: item.stock - qty <= 0 ? "out" : item.stock - qty <= 5 ? "low" : "active" } : item));
+    setCustomers((list) => {
+      const found = list.find((customer) => customer.name === convo.name);
+      const last = order.date;
+      if (found) {
+        return list.map((customer) => {
+          if (customer.name !== convo.name) return customer;
+          const nextOrders = customer.orders + 1;
+          return { ...customer, orders: nextOrders, spent: customer.spent + total, platform: convo.platform, last, tier: customerTier(nextOrders) };
+        });
+      }
+      return [{
+        id: Date.now(),
+        name: convo.name,
+        orders: 1,
+        spent: total,
+        platform: convo.platform,
+        last,
+        tier: customerTier(1),
+      }, ...list];
+    });
     return order;
+  };
+  const createProduct = (product) => {
+    setProducts((list) => {
+      const id = Math.max(0, ...list.map((item) => item.id || 0)) + 1;
+      const stock = Math.max(0, Number(product.stock) || 0);
+      const next = {
+        id,
+        sku: product.sku || `BK-${1000 + id * 7}`,
+        name: product.name,
+        category: product.category,
+        price: Number(product.price) || 0,
+        cost: Number(product.cost) || 0,
+        stock,
+        sold: 0,
+        status: productStatus(stock),
+        tint: product.tint || ["#FBE9EE", "#E8EEF8", "#E6F2EC", "#F8EFDD"][id % 4],
+      };
+      return [next, ...list];
+    });
+    go("products");
+  };
+  const restockProduct = (productId, amount = 10) => {
+    setProducts((list) => list.map((item) => {
+      if (item.id !== productId) return item;
+      const stock = item.stock + amount;
+      return { ...item, stock, status: productStatus(stock) };
+    }));
+  };
+  const advanceOrder = (orderId) => {
+    const flow = ["pending", "confirmed", "packing", "shipped", "delivered"];
+    setOrders((list) => list.map((order) => {
+      if (order.id !== orderId || order.status === "cancelled") return order;
+      const index = flow.indexOf(order.status);
+      return index === -1 || index === flow.length - 1 ? order : { ...order, status: flow[index + 1] };
+    }));
   };
 
   const rootStyle = { "--accent": accent[0], "--accent-strong": accent[1] };
@@ -128,9 +218,9 @@ function BKApp() {
   let screen;
   if (page === "dashboard") screen = <Dashboard dir={dir} go={go} orders={orders} pendingOrders={pendingOrders} lowStockCount={lowStockCount} />;
   else if (page === "products") screen = <Products go={go} />;
-  else if (page === "product-add") screen = <ProductAdd go={go} />;
-  else if (page === "stock") screen = <Stock go={go} />;
-  else if (page === "orders") screen = <Orders go={go} orders={orders} />;
+  else if (page === "product-add") screen = <ProductAdd go={go} onSaveProduct={createProduct} />;
+  else if (page === "stock") screen = <Stock go={go} onRestock={restockProduct} />;
+  else if (page === "orders") screen = <Orders go={go} orders={orders} onAdvanceOrder={advanceOrder} />;
   else if (page === "inbox") screen = <Inbox go={go} onCreateOrder={createOrder} />;
   else if (page === "sales") screen = <Sales dir={dir} />;
   else if (page === "customers") screen = <Customers />;
