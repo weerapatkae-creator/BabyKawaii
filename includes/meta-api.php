@@ -15,21 +15,33 @@ if (!function_exists('fetchFbProfile')) {
     function fetchFbProfile(string $userId, string $accessToken): array
     {
         if (!$accessToken || !$userId) return [null, null];
-        $url = "https://graph.facebook.com/v19.0/{$userId}?fields=name,profile_pic&access_token=" . urlencode($accessToken);
-        $ch  = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 5,
-            CURLOPT_SSL_VERIFYPEER => false,
-        ]);
+
+        // วิธีที่ 1: ดึงชื่อจาก Conversations API (ใช้ได้โดยไม่ต้องขอ user_profile permission)
+        $convUrl = "https://graph.facebook.com/v19.0/me/conversations"
+            . "?user_id=" . urlencode($userId)
+            . "&fields=participants"
+            . "&access_token=" . urlencode($accessToken);
+        $ch = curl_init($convUrl);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>6, CURLOPT_SSL_VERIFYPEER=>false]);
         $res  = curl_exec($ch);
         curl_close($ch);
-        $data = $res ? json_decode($res, true) : [];
-        // ใช้ Graph API redirect URL แทน CDN URL เพราะ Facebook block hotlinking จาก domain อื่น
-        $avatarUrl = !empty($data['id'])
-            ? "https://graph.facebook.com/{$data['id']}/picture?type=normal"
-            : ($data['profile_pic'] ?? null);
-        return [$data['name'] ?? null, $avatarUrl];
+        $conv = $res ? json_decode($res, true) : [];
+
+        $name = null;
+        if (!empty($conv['data'][0]['participants']['data'])) {
+            foreach ($conv['data'][0]['participants']['data'] as $p) {
+                // หาชื่อที่ไม่ใช่ Page (email ว่าง = ลูกค้า)
+                if (empty($p['email'])) {
+                    $name = $p['name'] ?? null;
+                    break;
+                }
+            }
+        }
+
+        // รูปโปรไฟล์ — ใช้ Graph API picture redirect (ไม่ต้อง access token)
+        $avatarUrl = "https://graph.facebook.com/{$userId}/picture?type=normal";
+
+        return [$name, $avatarUrl];
     }
 }
 
