@@ -372,10 +372,7 @@ async function handleFiles(fileList) {
     let files = [...fileList].filter(f => f.type.startsWith('image/'));
     if (!files.length) return;
 
-    if (files.length > MAX_FILES) {
-        alert(`เลือกได้สูงสุด ${MAX_FILES} รูป (เลือกมา ${files.length} รูป)\nจะนำ ${MAX_FILES} รูปแรก`);
-        files = files.slice(0, MAX_FILES);
-    }
+    if (files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
 
     document.getElementById('queue').innerHTML = '';
     document.getElementById('summary').style.display = 'block';
