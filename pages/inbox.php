@@ -2038,14 +2038,11 @@ function renderProduct(p) {
             </div>
         </div>
         <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-            <button class="btn-insert" onclick="sendProductInfo(${JSON.stringify(insertText)})">
+            <button class="btn-insert" onclick="fillReply(${JSON.stringify(insertText)})">
                 <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
             </button>
-            <button class="btn-insert" onclick="sendProductInfo(${JSON.stringify(insertStock)})">
+            <button class="btn-insert" onclick="fillReply(${JSON.stringify(insertStock)})">
                 <i class="fas fa-boxes" style="font-size:.6rem;"></i> ส่งสต็อก
-            </button>
-            <button class="btn-insert" style="background:#f0f8ff;color:#2563eb;border-color:#bfdbfe;" onclick="insertToReply(${JSON.stringify(insertText)})">
-                <i class="fas fa-pen" style="font-size:.6rem;"></i> แก้ก่อนส่ง
             </button>
         </div>
     </div>`;
@@ -2137,35 +2134,25 @@ function loadLowStock() {
     .catch(() => { el.innerHTML = '<div class="tools-hint" style="color:#e74c3c;">โหลดไม่ได้</div>'; });
 }
 
-/* ── Insert text into reply box ───────────────────────────────── */
-function insertToReply(text) {
-    if (!CONV_ID_CURRENT) {
-        alert('กรุณาเลือกบทสนทนาก่อน');
-        return;
-    }
-    // Show chat reply if hidden
-    const chatReply = document.getElementById('chatReply');
-    if (chatReply) chatReply.style.display = 'block';
-
+/* ── Fill reply textarea with text ────────────────────────────── */
+function fillReply(text) {
+    if (!CONV_ID_CURRENT) { alert('กรุณาเลือกบทสนทนาก่อน'); return; }
     const ta = document.getElementById('replyText');
     if (!ta) return;
+    // Show reply area
+    const cr = document.getElementById('chatReply');
+    if (cr && cr.style.display === 'none') cr.style.display = 'block';
+    // Fill text
     ta.value = text;
-    ta.focus();
     autoResize(ta);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    // Scroll chat to bottom
     const msgs = document.getElementById('chatMessages');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
 }
 
-/* ── Send product info directly ────────────────────────────────── */
-function sendProductInfo(text) {
-    if (!CONV_ID_CURRENT) { alert('กรุณาเลือกบทสนทนาก่อน'); return; }
-    const chatReply = document.getElementById('chatReply');
-    if (chatReply) chatReply.style.display = 'block';
-    const ta = document.getElementById('replyText');
-    if (ta) { ta.value = text; autoResize(ta); ta.focus(); }
-    // Auto-send
-    sendReply();
-}
+function insertToReply(text) { fillReply(text); }
 </script>
 
 <?php
