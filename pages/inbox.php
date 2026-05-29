@@ -700,7 +700,7 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 .order-section-label { font-size:0.72rem; font-weight:700; color:#c05a78; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
 .order-input { width:100%; border:1.5px solid #efe9ee; border-radius:8px; padding:7px 10px; font-size:0.79rem; font-family:inherit; background:#faf7f9; color:#2c2a30; margin-bottom:6px; transition:border-color .15s; display:block; }
 .order-input:focus { outline:none; border-color:#e8869b; background:#fff; }
-.order-item-row { background:#fff; border:1.5px solid #efe9ee; border-radius:10px; padding:8px 10px; margin-bottom:6px; position:relative; }
+.order-item-row { background:#fff; border:1.5px solid #efe9ee; border-radius:10px; padding:8px 10px; margin-bottom:6px; }
 .order-item-row select { width:100%; border:1.5px solid #efe9ee; border-radius:7px; padding:5px 8px; font-size:0.76rem; font-family:inherit; background:#faf7f9; margin-bottom:5px; }
 .order-item-row input { border:1.5px solid #efe9ee; border-radius:7px; padding:5px 8px; font-size:0.76rem; font-family:inherit; background:#faf7f9; }
 .order-item-row input:focus, .order-item-row select:focus { outline:none; border-color:#e8869b; }
@@ -1617,10 +1617,12 @@ function addOrderItem() {
     div.className = 'order-item-row';
     div.id = `oitem-${idx}`;
     div.innerHTML = `
-        <button onclick="removeOrderItem(${idx})" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#ddd;cursor:pointer;font-size:0.8rem;" title="ลบ"><i class="fas fa-times"></i></button>
-        <select onchange="fillOrderItem(${idx},this.value)" style="margin-bottom:5px;">
-            <option value="">-- เลือกสินค้า --</option>
-        </select>
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+            <select onchange="fillOrderItem(${idx},this.value)" style="flex:1;margin-bottom:0;">
+                <option value="">-- เลือกสินค้า --</option>
+            </select>
+            <button onclick="removeOrderItem(${idx})" style="background:#fff0f5;border:1.5px solid #f0d6de;border-radius:6px;color:#e07090;cursor:pointer;font-size:0.72rem;padding:5px 7px;flex-shrink:0;" title="ลบ"><i class="fas fa-times"></i></button>
+        </div>
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
             <select id="osize-${idx}" style="flex:1;min-width:60px;" onchange="calcTotal()">
                 <option value="">ไซส์</option>
