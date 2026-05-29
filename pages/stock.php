@@ -521,7 +521,7 @@ require_once __DIR__ . '/../includes/header.php';
 }
 .bc-preview-label {
     border: 1.5px solid #e5e7eb;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 8px 10px;
     width: calc(33.33% - 7px);
     min-width: 130px;
@@ -532,8 +532,15 @@ require_once __DIR__ . '/../includes/header.php';
     box-sizing: border-box;
 }
 .bc-preview-label svg { width: 100%; max-width: 150px; }
+.bc-preview-label.bc-selected { border-color: #7c3aed; background: #faf5ff; }
 .bc-preview-sku  { font-family: monospace; font-size: .68rem; font-weight: 800; color: #374151; margin-top: 4px; }
 .bc-preview-info { font-size: .6rem; color: #9ca3af; margin-top: 2px; }
+.bc-label-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+.bc-label-top input[type=checkbox] { width:16px; height:16px; cursor:pointer; accent-color:#7c3aed; }
+.bc-qty-row { display:flex; align-items:center; gap:5px; margin-top:6px; }
+.bc-qty-row label { font-size:.62rem; color:#9ca3af; }
+.bc-qty-input { width:52px; border:1.5px solid #e5e7eb; border-radius:6px; padding:3px 6px; font-size:.76rem; text-align:center; font-family:inherit; }
+.bc-qty-input:focus { outline:none; border-color:#7c3aed; }
 
 /* ══ Print media — only show barcode labels ═══════════════════════════════ */
 #barcodesPrintArea { display: none; }
@@ -891,15 +898,18 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             <div class="modal-body p-3">
                 <!-- Tip -->
-                <div style="background:#f5f3ff;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:.75rem;color:#6d28d9;">
-                    <i class="fas fa-lightbulb me-1"></i>
-                    แนะนำ: ใช้กระดาษสติ๊กเกอร์ A4 แบบ 4×3 ช่อง หรือ Brother / Dymo label paper
-                    · รหัสบาร์โค้ดฟอร์แมต <b>CODE128</b>
+                <div style="background:#f5f3ff;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:.75rem;color:#6d28d9;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                    <span><i class="fas fa-lightbulb me-1"></i>ติ๊กเลือกที่ต้องการพิมพ์ และกำหนดจำนวนก๊อปปี้</span>
+                    <div style="display:flex;gap:6px;">
+                        <button onclick="selectAllBc(true)"  style="background:#ede9fe;border:none;border-radius:6px;padding:3px 10px;font-size:.72rem;color:#6d28d9;cursor:pointer;">เลือกทั้งหมด</button>
+                        <button onclick="selectAllBc(false)" style="background:#f3f4f6;border:none;border-radius:6px;padding:3px 10px;font-size:.72rem;color:#6b7280;cursor:pointer;">ยกเลิก</button>
+                    </div>
                 </div>
-                <!-- Label grid preview -->
+                <!-- Label grid with checkboxes -->
                 <div id="printLabelsGrid" class="bc-preview-grid"></div>
             </div>
-            <div class="modal-footer" style="border-top:1px solid #f3f4f6;gap:8px;">
+            <div class="modal-footer" style="border-top:1px solid #f3f4f6;gap:8px;align-items:center;">
+                <span id="printSelectedCount" style="font-size:.78rem;color:#9ca3af;flex:1;"></span>
                 <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
                 <button class="btn btn-sm" id="doPrintBtn"
                         style="background:linear-gradient(135deg,#7c3aed,#E91E8C);color:#fff;border:none;"
@@ -1193,32 +1203,76 @@ function openPrintModal(labels, title) {
     _printLabelsData = labels;
     document.getElementById('printModalTitle').textContent = title || '';
 
-    // Render preview grid
     const grid = document.getElementById('printLabelsGrid');
     grid.innerHTML = labels.map((l, i) =>
-        `<div class="bc-preview-label">
+        `<div class="bc-preview-label bc-selected" id="pbl${i}" onclick="toggleBcLabel(${i})">
+            <div class="bc-label-top">
+                <input type="checkbox" id="pbc-chk${i}" checked onclick="event.stopPropagation();toggleBcLabel(${i})">
+                <span style="font-size:.6rem;color:#9ca3af;">${l.size}</span>
+            </div>
             <svg id="pbc${i}"></svg>
             <div class="bc-preview-sku">${l.variantSku}</div>
-            <div class="bc-preview-info">${l.productName} · ${l.colorTh} · ${l.size}</div>
+            <div class="bc-preview-info">${l.productName} · ${l.colorTh}</div>
+            <div class="bc-qty-row">
+                <label>จำนวน</label>
+                <input type="number" class="bc-qty-input" id="pbc-qty${i}" value="1" min="1" max="99"
+                       onclick="event.stopPropagation()" oninput="updatePrintCount()">
+                <label>ก๊อปปี้</label>
+            </div>
         </div>`
     ).join('');
 
-    // Generate barcodes (JsBarcode works even before the modal is visible)
     labels.forEach((l, i) => {
         try {
             JsBarcode('#pbc' + i, l.variantSku, {
                 format: 'CODE128', width: 1.4, height: 38,
                 displayValue: false, margin: 2,
             });
-        } catch(e) { /* invalid chars — skip */ }
+        } catch(e) {}
     });
 
+    updatePrintCount();
     bootstrap.Modal.getOrCreateInstance(document.getElementById('printModal')).show();
 }
 
+function toggleBcLabel(i) {
+    const card = document.getElementById('pbl' + i);
+    const chk  = document.getElementById('pbc-chk' + i);
+    chk.checked = !chk.checked;
+    card.classList.toggle('bc-selected', chk.checked);
+    updatePrintCount();
+}
+
+function selectAllBc(val) {
+    _printLabelsData.forEach((_, i) => {
+        document.getElementById('pbc-chk' + i).checked = val;
+        document.getElementById('pbl' + i).classList.toggle('bc-selected', val);
+    });
+    updatePrintCount();
+}
+
+function updatePrintCount() {
+    let total = 0;
+    _printLabelsData.forEach((_, i) => {
+        if (document.getElementById('pbc-chk' + i)?.checked) {
+            total += parseInt(document.getElementById('pbc-qty' + i)?.value || 1);
+        }
+    });
+    document.getElementById('printSelectedCount').textContent = `จะพิมพ์ ${total} ป้าย`;
+}
+
 function doPrintBarcodes() {
+    const selected = [];
+    _printLabelsData.forEach((l, i) => {
+        if (!document.getElementById('pbc-chk' + i)?.checked) return;
+        const qty = parseInt(document.getElementById('pbc-qty' + i)?.value || 1);
+        for (let c = 0; c < qty; c++) selected.push(l);
+    });
+
+    if (!selected.length) { alert('กรุณาเลือกอย่างน้อย 1 รายการ'); return; }
+
     const pa = document.getElementById('barcodesPrintArea');
-    pa.innerHTML = _printLabelsData.map((l, i) =>
+    pa.innerHTML = selected.map((l, i) =>
         `<div class="bc-print-label">
             <svg id="bcp${i}"></svg>
             <div class="bc-print-sku">${l.variantSku}</div>
@@ -1226,8 +1280,7 @@ function doPrintBarcodes() {
         </div>`
     ).join('');
 
-    // Generate barcodes in print area
-    _printLabelsData.forEach((l, i) => {
+    selected.forEach((l, i) => {
         try {
             JsBarcode('#bcp' + i, l.variantSku, {
                 format: 'CODE128', width: 1.2, height: 32,
