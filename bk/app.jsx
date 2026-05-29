@@ -31,6 +31,14 @@ function BKApp() {
       return window.BK_DATA.orders;
     }
   });
+  const [products, setProducts] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem("bk-products");
+      return saved ? JSON.parse(saved) : window.BK_DATA.products;
+    } catch (e) {
+      return window.BK_DATA.products;
+    }
+  });
 
   const dir = DIR_MAP[t.direction] || "a";
   const theme = t.theme === "มืด" ? "dark" : "light";
@@ -46,11 +54,41 @@ function BKApp() {
     localStorage.setItem("bk-orders", JSON.stringify(orders));
   }, [orders]);
 
+  React.useEffect(() => {
+    localStorage.setItem("bk-products", JSON.stringify(products));
+  }, [products]);
+
+  const liveData = React.useMemo(() => {
+    const stockTotal = products.reduce((sum, product) => sum + product.stock, 0);
+    const lowStockItems = products
+      .filter((product) => product.stock <= 5)
+      .map((product) => ({
+        name: product.name,
+        sku: product.sku,
+        size: window.BK_DATA.sizes[(product.id + 1) % window.BK_DATA.sizes.length],
+        color: window.BK_DATA.colorsTH[product.id % window.BK_DATA.colorsTH.length],
+        qty: product.stock,
+      }));
+    return {
+      ...window.BK_DATA,
+      products,
+      bestSellers: [...products].sort((a, b) => b.sold - a.sold).slice(0, 5),
+      lowStockItems,
+      kpis: {
+        ...window.BK_DATA.kpis,
+        products: products.length,
+        stockTotal,
+        lowStock: lowStockItems.length,
+      },
+    };
+  }, [products]);
+  window.BK_DATA = liveData;
+
   const toggleTheme = () => setTweak("theme", theme === "dark" ? "สว่าง" : "มืด");
   const go = (p) => { setPage(p); window.scrollTo({ top: 0 }); };
   const pendingOrders = orders.filter((order) => order.status === "pending").length;
   const unreadMessages = (window.BK_CONVOS || []).reduce((sum, convo) => sum + (convo.unread || 0), 0);
-  const lowStockCount = (window.BK_DATA.lowStockItems || []).filter((item) => item.qty <= 5).length;
+  const lowStockCount = liveData.lowStockItems.filter((item) => item.qty <= 5).length;
   const badges = { orders: pendingOrders, inbox: unreadMessages, stock: lowStockCount };
   const createOrder = ({ convo, product, size, qty, total }) => {
     const maxNumber = orders.reduce((max, order) => {
@@ -72,6 +110,7 @@ function BKApp() {
       size,
     };
     setOrders((list) => [order, ...list]);
+    setProducts((list) => list.map((item) => item.id === product.id ? { ...item, stock: Math.max(0, item.stock - qty), status: item.stock - qty <= 0 ? "out" : item.stock - qty <= 5 ? "low" : "active" } : item));
     return order;
   };
 
