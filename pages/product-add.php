@@ -571,40 +571,44 @@ $currentType = $product['product_type'] ?? 'single';
 </form>
 
 <!-- ── Media Picker Modal ──────────────────────────────────────────────────── -->
-<div class="modal fade" id="mediaPickerModal" tabindex="-1" style="z-index:9999;">
-    <div class="modal-dialog modal-xl" style="margin:1rem auto;">
-        <div class="modal-content" style="border-radius:16px;border:none;max-height:90vh;display:flex;flex-direction:column;">
-            <div class="modal-header" style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;border:none;border-radius:16px 16px 0 0;padding:14px 20px;flex-shrink:0;">
-                <div style="display:flex;align-items:center;gap:12px;flex:1;">
-                    <h5 class="modal-title mb-0" style="font-size:.95rem;"><i class="fas fa-images me-2"></i>คลังรูปภาพ</h5>
-                    <input type="text" id="mpSearch" class="form-control form-control-sm"
-                           placeholder="🔍 ค้นหา..." style="max-width:220px;border-radius:20px;"
-                           oninput="mpSearchTimer()">
-                </div>
-                <button type="button" class="btn-close btn-close-white ms-3" data-bs-dismiss="modal"></button>
+<!-- Media Picker — custom overlay, ไม่ใช้ Bootstrap modal -->
+<div id="mpOverlay" onclick="mpOverlayClick(event)"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;overflow-y:auto;padding:16px;">
+    <div id="mpBox" style="max-width:960px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+
+        <!-- header -->
+        <div style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:12px;">
+            <i class="fas fa-images"></i>
+            <span style="font-weight:700;font-size:.95rem;flex:1;">คลังรูปภาพ</span>
+            <input type="text" id="mpSearch" placeholder="🔍 ค้นหา..."
+                   oninput="mpSearchTimer()"
+                   style="max-width:200px;border-radius:20px;border:none;padding:5px 12px;font-size:.82rem;outline:none;">
+            <button type="button" onclick="mpClose()"
+                    style="background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:50%;width:30px;height:30px;font-size:1rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+
+        <!-- body -->
+        <div style="padding:12px;background:#f8f5fc;min-height:200px;">
+            <div id="mpLoading" style="display:none;text-align:center;padding:40px;color:#aaa;">
+                <div class="spinner-border spinner-border-sm"></div>
+                <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
             </div>
-            <div style="overflow-y:auto;flex:1;padding:12px;background:#f8f5fc;border-radius:0 0 16px 16px;">
-                <div id="mpLoading" style="display:none;text-align:center;padding:48px;color:#aaa;">
-                    <div class="spinner-border spinner-border-sm"></div>
-                    <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
-                </div>
-                <div id="mpEmpty" style="display:none;text-align:center;padding:48px 16px;color:#bbb;">
-                    <div style="font-size:2.5rem;">🖼️</div>
-                    <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
-                    <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank"
-                       class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
-                        ไปคลังรูปสินค้า <i class="fas fa-external-link-alt ms-1"></i>
-                    </a>
-                </div>
-                <div id="mpGrid" onclick="mpGridClick(event)"
-                     style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;"></div>
-                <div id="mpLoadMore" style="display:none;text-align:center;padding:12px;">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="mpLoad(mpPage+1)">
-                        โหลดเพิ่ม
-                    </button>
-                </div>
+            <div id="mpEmpty" style="display:none;text-align:center;padding:40px;color:#bbb;">
+                <div style="font-size:2.5rem;">🖼️</div>
+                <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
+                <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank"
+                   style="display:inline-block;margin-top:10px;font-size:.78rem;color:#9b72cf;">ไปคลังรูปสินค้า ↗</a>
+            </div>
+            <div id="mpGrid" onclick="mpGridClick(event)"
+                 style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;"></div>
+            <div id="mpLoadMore" style="display:none;text-align:center;padding:12px;">
+                <button type="button" onclick="mpLoad(mpPage+1)"
+                        style="padding:6px 20px;border:1.5px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:.82rem;">
+                    โหลดเพิ่ม
+                </button>
             </div>
         </div>
+
     </div>
 </div>
 
@@ -1139,15 +1143,25 @@ updateProfit();
 updateVariantSKUs();
 
 // ── MEDIA PICKER ─────────────────────────────────────────────────────────────
-let mpPage = 1, mpQuery = '', mpSearchDebounce = null, _mpModal = null;
+let mpPage = 1, mpQuery = '', mpSearchDebounce = null;
 
 function openMediaPicker() {
-    _mpModal = new bootstrap.Modal(document.getElementById('mediaPickerModal'));
-    _mpModal.show();
+    document.getElementById('mpOverlay').style.display = 'block';
+    document.body.style.overflow = 'hidden';
     document.getElementById('mpGrid').innerHTML = '';
     document.getElementById('mpSearch').value = '';
     mpPage = 1; mpQuery = '';
     mpLoad(1);
+}
+
+function mpClose() {
+    document.getElementById('mpOverlay').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function mpOverlayClick(e) {
+    // ปิดเมื่อคลิก backdrop (พื้นที่นอก mpBox)
+    if (!document.getElementById('mpBox').contains(e.target)) mpClose();
 }
 
 function mpSearchTimer() {
@@ -1202,7 +1216,7 @@ function selectMediaImage(filename, url) {
     const preview = document.getElementById('mainImagePreview');
     preview.src = url;
     preview.style.display = 'block';
-    _mpModal?.hide();
+    mpClose();
 }
 </script>
 
