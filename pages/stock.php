@@ -742,15 +742,13 @@ require_once __DIR__ . '/../includes/header.php';
         <!-- ── Collapsed header ── -->
         <div class="prow-header" onclick="toggleRow(<?= $group['product_id'] ?>)">
 
-            <!-- Color swatches -->
-            <div class="swatch-stack">
-                <?php $ci = 0; foreach ($group['colors'] as $cd): if ($ci++ >= 5) break; ?>
-                <span class="swatch" style="background:<?= $cd['color_css'] ?>;" title="<?= htmlspecialchars($cd['color']) ?>"></span>
-                <?php endforeach; ?>
-                <?php if (count($group['colors']) > 5): ?>
-                <span style="font-size:.62rem;color:#9ca3af;">+<?= count($group['colors'])-5 ?></span>
-                <?php endif; ?>
-            </div>
+            <!-- Product image -->
+            <?php if ($group['main_image']): ?>
+            <img src="<?= UPLOAD_URL ?>products/<?= htmlspecialchars($group['main_image']) ?>"
+                 alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1px solid #efe9ee;">
+            <?php else: ?>
+            <div style="width:44px;height:44px;border-radius:8px;background:var(--lavender);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem;"><?= $group['cat_icon'] ?></div>
+            <?php endif; ?>
 
             <!-- Name + meta -->
             <div style="flex:1;min-width:0;">
