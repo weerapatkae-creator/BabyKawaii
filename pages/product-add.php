@@ -750,8 +750,11 @@ $currentType = $product['product_type'] ?? 'single';
     position: relative; cursor: pointer; border-radius: 10px;
     overflow: hidden; aspect-ratio: 1; background: #e8e0f0;
     border: 2.5px solid transparent; transition: border-color .15s, transform .12s;
+    padding: 0; display: block; width: 100%;
+    -webkit-tap-highlight-color: rgba(233,30,140,.2);
 }
-.mp-item:hover { border-color: #E91E8C; transform: scale(1.03); }
+.mp-item:hover, .mp-item:focus { border-color: #E91E8C; transform: scale(1.03); outline: none; }
+.mp-item:active { transform: scale(.97); border-color: #E91E8C; }
 .mp-item img   { width: 100%; height: 100%; object-fit: cover; display: block; }
 .mp-item-title {
     position: absolute; bottom: 0; left: 0; right: 0;
@@ -1168,12 +1171,13 @@ async function mpLoad(page) {
         document.getElementById('mpEmpty').style.display = 'block'; return;
     }
     data.items.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'mp-item';
-        div.innerHTML = `<img src="${item.url}" loading="lazy" alt="${item.title}">
-            <div class="mp-item-title">${item.title}</div>`;
-        div.onclick = () => selectMediaImage(item.filename, item.url);
-        grid.appendChild(div);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mp-item';
+        btn.innerHTML = `<img src="${item.url}" alt="" style="pointer-events:none;">
+            <div class="mp-item-title" style="pointer-events:none;">${item.title}</div>`;
+        btn.addEventListener('click', () => selectMediaImage(item.filename, item.url));
+        grid.appendChild(btn);
     });
     mpPage = page;
     const loaded = grid.children.length;
