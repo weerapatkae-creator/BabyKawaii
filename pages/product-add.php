@@ -142,7 +142,7 @@ foreach ($stockData as $s) {
 
 // All single products with stock for bundle builder
 $rawStock = $pdo->query("
-    SELECT p.id, p.name, p.sku, p.selling_price, p.cost_price,
+    SELECT p.id, p.name, p.sku, p.selling_price, p.cost_price, p.main_image,
            s.size, s.color, s.quantity as stock_qty
     FROM products p
     JOIN stock s ON s.product_id = p.id
@@ -154,7 +154,7 @@ $stockIndex = [];
 foreach ($rawStock as $r) {
     $pid = $r['id'];
     if (!isset($stockIndex[$pid])) {
-        $stockIndex[$pid] = ['name'=>$r['name'],'sku'=>$r['sku'],'price'=>(float)$r['selling_price'],'cost'=>(float)$r['cost_price'],'sizes'=>[]];
+        $stockIndex[$pid] = ['name'=>$r['name'],'sku'=>$r['sku'],'price'=>(float)$r['selling_price'],'cost'=>(float)$r['cost_price'],'image'=>$r['main_image']??'','sizes'=>[]];
     }
     if (!isset($stockIndex[$pid]['sizes'][$r['size']])) $stockIndex[$pid]['sizes'][$r['size']] = [];
     $stockIndex[$pid]['sizes'][$r['size']][] = ['color'=>$r['color'],'qty'=>(int)$r['stock_qty']];
@@ -561,7 +561,7 @@ $currentType = $product['product_type'] ?? 'single';
 
 /* product card in picker */
 .bpicker-product { border: 1.5px solid #ede5f5; border-radius: 10px; overflow: hidden; background:#fafafa; }
-.bpicker-product-header { padding: 8px 10px; font-size: .8rem; font-weight: 700; color: #444; background: #f5f0fb; display:flex; align-items:center; gap:6px; }
+.bpicker-product-header { padding: 8px 10px; font-size: .8rem; font-weight: 700; color: #444; background: #f5f0fb; display:flex; align-items:center; gap:8px; }
 .bpicker-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; }
 .bchip {
     display: inline-flex; align-items: center; gap: 4px;
@@ -867,11 +867,17 @@ function renderBundlePicker(filter = '') {
             }).join('')
         ).join('');
         if (!chipHtml) return;
+        const imgHtml = p.image
+            ? `<img src="<?= UPLOAD_URL ?>products/${p.image}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid #ede5f5;">`
+            : `<div style="width:36px;height:36px;border-radius:6px;background:#f5f0fb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.1rem;">👶</div>`;
         list.insertAdjacentHTML('beforeend', `
             <div class="bpicker-product">
                 <div class="bpicker-product-header">
-                    <span style="flex:1;">${p.name}</span>
-                    ${p.sku ? `<span style="font-size:.65rem;color:#aaa;">${p.sku}</span>` : ''}
+                    ${imgHtml}
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+                        ${p.sku ? `<div style="font-size:.62rem;color:#aaa;">${p.sku}</div>` : ''}
+                    </div>
                 </div>
                 <div class="bpicker-chips">${chipHtml}</div>
             </div>`);
