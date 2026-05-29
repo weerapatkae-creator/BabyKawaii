@@ -343,9 +343,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 
         // Insert order
         $pdo->prepare("
-            INSERT INTO orders (order_number,customer_name,customer_phone,shipping_address,
+            INSERT INTO orders (order_number,customer_name,customer_phone,customer_address,
                                 total_amount,order_status,payment_status,platform_id,notes,order_date)
-            VALUES (?,?,?,?,?,'pending','unpaid',?,?,NOW())
+            VALUES (?,?,?,?,?,'pending','pending',?,?,NOW())
         ")->execute([$orderNum,$custName,$custPhone,$custAddr,$total,$platformId,$note]);
         $orderId = (int)$pdo->lastInsertId();
 
