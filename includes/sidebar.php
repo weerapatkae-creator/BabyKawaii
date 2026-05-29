@@ -45,9 +45,6 @@ $isAdminRole = in_array($_SESSION['admin_role'] ?? '', ['superadmin', 'admin']);
            class="nav-item <?= ($currentPage === $item['page']) ? 'active' : '' ?>">
             <i class="fas <?= $item['icon'] ?>"></i>
             <span><?= $item['label'] ?></span>
-            <?php if ($item['page'] === 'stock' && $lowStockCount > 0): ?>
-                <span class="nav-badge"><?= $lowStockCount ?></span>
-            <?php endif; ?>
             <?php if ($item['page'] === 'orders' && $pendingOrders > 0): ?>
                 <span class="nav-badge"><?= $pendingOrders ?></span>
             <?php endif; ?>
