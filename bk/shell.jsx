@@ -3,13 +3,13 @@
 const BK_NAV = [
   { section: "ภาพรวม" },
   { id: "dashboard", label: "แดชบอร์ด", icon: "grid" },
-  { id: "orders", label: "ออเดอร์", icon: "bag", badge: 14 },
-  { id: "inbox", label: "Inbox ข้อความ", icon: "chat", badge: 3 },
+  { id: "orders", label: "ออเดอร์", icon: "bag" },
+  { id: "inbox", label: "Inbox ข้อความ", icon: "chat" },
   { id: "sales", label: "ยอดขาย & วิเคราะห์", icon: "trend" },
   { section: "คลังสินค้า" },
   { id: "products", label: "สินค้าทั้งหมด", icon: "shirt" },
   { id: "product-add", label: "เพิ่มสินค้า", icon: "plusCircle" },
-  { id: "stock", label: "จัดการสต็อก", icon: "box", badge: 6 },
+  { id: "stock", label: "จัดการสต็อก", icon: "box" },
   { section: "การตลาด & สื่อ" },
   { id: "media", label: "คลังสื่อ", icon: "image" },
   { id: "calendar", label: "ปฏิทินโพสต์", icon: "calendar" },
@@ -22,7 +22,7 @@ const BK_NAV = [
   { id: "users", label: "จัดการผู้ใช้งาน", icon: "users" },
 ];
 
-function Sidebar({ page, go, open, onClose }) {
+function Sidebar({ page, go, open, onClose, badges = {} }) {
   const d = window.BK_DATA;
   return (
     <aside className={"bk-sidebar" + (open ? " is-open" : "")}>
@@ -43,7 +43,7 @@ function Sidebar({ page, go, open, onClose }) {
               onClick={() => { go(item.id); onClose && onClose(); }}>
               <BKIcon name={item.icon} size={18} />
               <span>{item.label}</span>
-              {item.badge ? <span className="bk-nav__badge bk-num">{item.badge}</span> : null}
+              {badges[item.id] > 0 ? <span className="bk-nav__badge bk-num">{badges[item.id]}</span> : null}
             </button>
           )
         )}

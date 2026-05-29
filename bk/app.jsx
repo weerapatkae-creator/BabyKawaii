@@ -48,6 +48,10 @@ function BKApp() {
 
   const toggleTheme = () => setTweak("theme", theme === "dark" ? "สว่าง" : "มืด");
   const go = (p) => { setPage(p); window.scrollTo({ top: 0 }); };
+  const pendingOrders = orders.filter((order) => order.status === "pending").length;
+  const unreadMessages = (window.BK_CONVOS || []).reduce((sum, convo) => sum + (convo.unread || 0), 0);
+  const lowStockCount = (window.BK_DATA.lowStockItems || []).filter((item) => item.qty <= 5).length;
+  const badges = { orders: pendingOrders, inbox: unreadMessages, stock: lowStockCount };
   const createOrder = ({ convo, product, size, qty, total }) => {
     const maxNumber = orders.reduce((max, order) => {
       const n = Number(String(order.number || "").replace(/\D/g, ""));
@@ -83,7 +87,7 @@ function BKApp() {
   }
 
   let screen;
-  if (page === "dashboard") screen = <Dashboard dir={dir} go={go} />;
+  if (page === "dashboard") screen = <Dashboard dir={dir} go={go} orders={orders} pendingOrders={pendingOrders} lowStockCount={lowStockCount} />;
   else if (page === "products") screen = <Products go={go} />;
   else if (page === "product-add") screen = <ProductAdd go={go} />;
   else if (page === "stock") screen = <Stock go={go} />;
@@ -101,7 +105,7 @@ function BKApp() {
 
   return (
     <div className="bk-app" data-theme={theme} data-dir={dir} data-density={density} style={rootStyle}>
-      <Sidebar page={page} go={go} open={sbOpen} onClose={() => setSbOpen(false)} />
+      <Sidebar page={page} go={go} open={sbOpen} onClose={() => setSbOpen(false)} badges={badges} />
       {sbOpen && <div className="bk-scrim" onClick={() => setSbOpen(false)} />}
       <div className="bk-main">
         <Topbar onMenu={() => setSbOpen(true)} theme={theme} toggleTheme={toggleTheme} />

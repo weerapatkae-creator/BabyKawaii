@@ -380,4 +380,4 @@ function Inbox({ go, onCreateOrder }) {
   );
 }
 
-Object.assign(window, { Inbox });
+Object.assign(window, { Inbox, BK_CONVOS });

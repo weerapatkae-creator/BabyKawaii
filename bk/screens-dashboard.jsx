@@ -117,13 +117,13 @@ function ProfitStrip() {
   );
 }
 
-function Dashboard({ dir, go }) {
+function Dashboard({ dir, go, orders = window.BK_DATA.orders, pendingOrders = window.BK_DATA.orders.filter((o) => o.status === "pending").length, lowStockCount = window.BK_DATA.lowStockItems.length }) {
   const d = window.BK_DATA, k = d.kpis;
   const stats = [
     { icon: "coins", label: "ยอดขายวันนี้", value: fmt(k.salesToday), delta: k.salesTodayDelta, spark: d.sales14.slice(-7), foot: <span><BKIcon name="calendar" size={12} /> 29 พ.ค. 2569</span> },
     { icon: "trend", label: "ยอดขายเดือนนี้", value: fmt(k.salesMonth), spark: d.sales14, foot: <span><BKIcon name="bag" size={12} /> {fmtNum(k.ordersMonth)} ออเดอร์</span> },
     { icon: "shirt", label: "สินค้าทั้งหมด", value: fmtNum(k.products), spark: [60,64,70,72,78,82,86], foot: <span><BKIcon name="box" size={12} /> สต็อกรวม {fmtNum(k.stockTotal)} ชิ้น</span> },
-    { icon: "truck", label: "ออเดอร์รอดำเนินการ", value: fmtNum(k.pending), spark: [8,11,9,14,12,15,14], foot: <span style={{ color: "var(--t-amber)" }}><BKIcon name="alert" size={12} /> สต็อกใกล้หมด {k.lowStock} รายการ</span> },
+    { icon: "truck", label: "ออเดอร์รอดำเนินการ", value: fmtNum(pendingOrders), spark: [8,11,9,14,12,15,pendingOrders], foot: <span style={{ color: "var(--t-amber)" }}><BKIcon name="alert" size={12} /> สต็อกใกล้หมด {lowStockCount} รายการ</span> },
   ];
   return (
     <div className="bk-page">
@@ -177,7 +177,7 @@ function Dashboard({ dir, go }) {
             <table className="bk-table">
               <thead><tr><th>เลขออเดอร์</th><th>ช่องทาง</th><th className="bk-th-r">ยอด</th><th>สถานะ</th></tr></thead>
               <tbody>
-                {d.orders.slice(0, 6).map((o) => (
+                {orders.slice(0, 6).map((o) => (
                   <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => go("orders")}>
                     <td>
                       <div style={{ fontWeight: 700, color: "var(--accent-strong)", fontSize: ".82rem" }} className="bk-num">{o.number}</div>
