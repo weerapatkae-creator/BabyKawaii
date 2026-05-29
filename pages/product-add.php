@@ -43,7 +43,7 @@ if ($editId) {
             $bundleItems = $bi->fetchAll();
         } else {
             $sStmt = $pdo->prepare("SELECT * FROM stock WHERE product_id = ?
-                ORDER BY FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')");
+                ORDER BY FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','Free Size')");
             $sStmt->execute([$editId]);
             $stockData = $sStmt->fetchAll();
         }
@@ -132,7 +132,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 $categories   = $pdo->query("SELECT * FROM categories WHERE is_active=1 ORDER BY sort_order")->fetchAll();
-$sizes        = ['Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size'];
+$sizes        = ['Premature','NB','0-3M','3-6M','6-9M','9-12M','Free Size'];
 $defaultColors= ['ขาว','ชมพู','ฟ้า','เหลือง','เขียว','ม่วง','แดง','ส้ม','เทา','ดำ','ลายทาง','ลายดอก','ลายการ์ตูน'];
 
 $stockMatrix = [];
@@ -309,23 +309,21 @@ $currentType = $product['product_type'] ?? 'single';
     <!-- SINGLE: Stock Table -->
     <div id="singleStockSection" class="card <?= $currentType==='bundle'?'d-none':'' ?>">
         <div class="card-header">
-            <span class="card-title">📦 จัดการสต็อก ตามไซต์ & สี</span>
+            <span class="card-title">📦 สต็อกสินค้า</span>
             <button type="button" class="btn btn-sm btn-outline-pink" onclick="addColorRow()">
                 <i class="fas fa-plus"></i> เพิ่มสี
             </button>
         </div>
-        <div class="card-body">
-            <p class="text-muted mb-3" style="font-size:0.85rem;">กรอกจำนวนสต็อกตามไซต์ที่ต้องการ (ว่างเว้น = ไม่มีไซต์นี้)</p>
+        <div class="card-body" style="padding:12px;">
             <div class="table-responsive">
-                <table class="table table-bordered" id="stockTable" style="font-size:0.85rem;">
+                <table id="stockTable" style="font-size:0.83rem;width:100%;border-collapse:separate;border-spacing:0;">
                     <thead>
                         <tr>
-                            <th style="background:var(--bg);min-width:110px;">สี / ลาย</th>
-                            <th style="background:var(--bg);min-width:130px;color:#9B72CF;">รหัสสี (SKU)</th>
+                            <th style="background:#faf7f9;padding:8px 10px;border-bottom:2px solid #efe9ee;white-space:nowrap;min-width:110px;border-radius:8px 0 0 0;">สี / ลาย</th>
                             <?php foreach ($sizes as $sz): ?>
-                            <th style="background:var(--bg);text-align:center;min-width:78px;"><?= $sz ?></th>
+                            <th style="background:#faf7f9;padding:8px 6px;border-bottom:2px solid #efe9ee;text-align:center;min-width:66px;font-weight:700;color:#c05a78;"><?= $sz ?></th>
                             <?php endforeach; ?>
-                            <th style="background:var(--bg);width:40px;"></th>
+                            <th style="background:#faf7f9;border-bottom:2px solid #efe9ee;width:36px;border-radius:0 8px 0 0;"></th>
                         </tr>
                     </thead>
                     <tbody id="stockTbody">
@@ -333,41 +331,37 @@ $currentType = $product['product_type'] ?? 'single';
                         $existingColors = $editId ? array_unique(array_column($stockData, 'color')) : ['ขาว','ชมพู'];
                         if (empty($existingColors)) $existingColors = ['ขาว'];
                         foreach ($existingColors as $color): ?>
-                        <tr class="stock-row">
-                            <td>
+                        <tr class="stock-row" style="border-bottom:1px solid #f5f0f5;">
+                            <td style="padding:6px 8px;">
                                 <input type="text" class="form-control form-control-sm color-input"
                                        list="colorList" placeholder="สี..."
                                        value="<?= htmlspecialchars($color) ?>"
-                                       oninput="updateStockNames(this);updateVariantSKUs()">
-                            </td>
-                            <td>
-                                <div class="color-sku-badge" style="font-size:0.72rem;font-weight:700;color:#9B72CF;font-family:monospace;background:var(--lavender);border-radius:6px;padding:4px 8px;white-space:nowrap;">
-                                    <?= htmlspecialchars(($product['sku'] ?? '') . ($color ? '-' . $color : '')) ?>
-                                </div>
+                                       oninput="updateStockNames(this);updateVariantSKUs()"
+                                       style="border-radius:7px;font-size:0.82rem;">
                             </td>
                             <?php foreach ($sizes as $sz): ?>
-                            <td style="padding:4px;">
+                            <td style="padding:5px 4px;text-align:center;">
                                 <input type="number" name="stock[<?= $sz ?>][<?= htmlspecialchars($color) ?>][qty]"
                                        class="form-control form-control-sm stock-qty text-center"
                                        placeholder="—" min="0"
                                        value="<?= $stockMatrix[$sz][$color]['qty'] ?? '' ?>"
-                                       style="font-size:0.82rem;margin-bottom:2px;">
-                                <div class="variant-sku-label" style="font-size:0.55rem;color:#aaa;text-align:center;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-                                     title="<?= htmlspecialchars(($product['sku'] ?? '') . '-' . $color . '-' . $sz) ?>">
-                                    <?= htmlspecialchars(($product['sku'] ?? '') . '-' . $color . '-' . $sz) ?>
-                                </div>
+                                       style="font-size:0.85rem;border-radius:7px;padding:5px 4px;">
                             </td>
                             <?php endforeach; ?>
-                            <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+                            <td style="padding:5px 4px;text-align:center;">
+                                <button type="button" style="background:none;border:none;color:#ddd;cursor:pointer;font-size:0.85rem;padding:4px;" onclick="removeRow(this)">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
             <datalist id="colorList"><?php foreach ($defaultColors as $c): ?><option value="<?= $c ?>"><?php endforeach; ?></datalist>
-            <div class="d-flex align-items-center gap-3 mt-2">
-                <small class="text-muted">* ตัวเลขในแต่ละช่อง = จำนวนในสต็อก &nbsp;·&nbsp; เว้นว่าง = ไม่มีไซต์นี้</small>
-                <div id="variantCountBadge" style="font-size:0.75rem;background:var(--lavender);color:#9B72CF;border-radius:12px;padding:2px 10px;font-weight:600;"></div>
+            <div class="d-flex align-items-center gap-2 mt-3">
+                <small class="text-muted" style="font-size:0.76rem;">ตัวเลข = จำนวนสต็อก · เว้นว่าง = ไม่มีไซต์นี้</small>
+                <div id="variantCountBadge" style="font-size:0.73rem;background:var(--lavender);color:#9B72CF;border-radius:10px;padding:2px 10px;font-weight:600;"></div>
             </div>
         </div>
     </div>
@@ -592,27 +586,25 @@ function addColorRow() {
     // Use inline color picker row instead of prompt
     const color  = suggest;
     const baseSku = document.getElementById('skuInput')?.value || '';
-    let html = `<tr class="stock-row">
-        <td>
+    let html = `<tr class="stock-row" style="border-bottom:1px solid #f5f0f5;">
+        <td style="padding:6px 8px;">
             <input type="text" class="form-control form-control-sm color-input" list="colorList"
                    placeholder="สี..." value="${color}"
-                   oninput="updateStockNames(this);updateVariantSKUs()">
-        </td>
-        <td>
-            <div class="color-sku-badge" style="font-size:0.72rem;font-weight:700;color:#9B72CF;font-family:monospace;background:var(--lavender);border-radius:6px;padding:4px 8px;white-space:nowrap;">
-                ${baseSku ? baseSku + (color?'-'+color:'') : '—'}
-            </div>
+                   oninput="updateStockNames(this);updateVariantSKUs()"
+                   style="border-radius:7px;font-size:0.82rem;">
         </td>`;
     SIZES.forEach(sz => {
-        const varSku = baseSku ? baseSku + '-' + color + '-' + sz : '';
-        html += `<td style="padding:4px;">
+        html += `<td style="padding:5px 4px;text-align:center;">
             <input type="number" name="stock[${sz}][${color}][qty]"
                    class="form-control form-control-sm stock-qty text-center"
-                   placeholder="—" min="0" style="font-size:0.82rem;margin-bottom:2px;">
-            <div class="variant-sku-label" style="font-size:0.55rem;color:#aaa;text-align:center;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${varSku}">${varSku}</div>
+                   placeholder="—" min="0" style="font-size:0.85rem;border-radius:7px;padding:5px 4px;">
         </td>`;
     });
-    html += `<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td></tr>`;
+    html += `<td style="padding:5px 4px;text-align:center;">
+        <button type="button" style="background:none;border:none;color:#ddd;cursor:pointer;font-size:0.85rem;padding:4px;" onclick="removeRow(this)">
+            <i class="fas fa-times"></i>
+        </button>
+    </td></tr>`;
     tbody.insertAdjacentHTML('beforeend', html);
     // Focus the new color input
     const lastRow  = tbody.lastElementChild;
