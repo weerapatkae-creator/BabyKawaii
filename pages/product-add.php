@@ -3,6 +3,31 @@ require_once __DIR__ . '/../config/database.php';
 requireLogin();
 $pdo = getDB();
 
+// ── AJAX: media library list ─────────────────────────────────────────────────
+if (isset($_GET['get_media_list'])) {
+    header('Content-Type: application/json');
+    $q    = trim($_GET['q'] ?? '');
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $per  = 40;
+    $offset = ($page - 1) * $per;
+    $where = ["file_type = 'image'"];
+    $params = [];
+    if ($q) { $where[] = "(title LIKE ? OR tags LIKE ? OR original_name LIKE ?)"; $params = array_fill(0, 3, "%$q%"); }
+    $sql = "SELECT id, filename, title, original_name FROM media WHERE " . implode(' AND ', $where) . " ORDER BY created_at DESC LIMIT $per OFFSET $offset";
+    $rows = $pdo->prepare($sql);
+    $rows->execute($params);
+    $items = array_map(fn($r) => [
+        'id'       => $r['id'],
+        'filename' => $r['filename'],
+        'title'    => $r['title'] ?: $r['original_name'],
+        'url'      => UPLOAD_URL . 'media/' . $r['filename'],
+    ], $rows->fetchAll(PDO::FETCH_ASSOC));
+    $total = $pdo->prepare("SELECT COUNT(*) FROM media WHERE " . implode(' AND ', $where));
+    $total->execute($params);
+    echo json_encode(['items' => $items, 'total' => (int)$total->fetchColumn(), 'page' => $page, 'per' => $per], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ── AJAX: get next available SKU ─────────────────────────────────────────────
 if (isset($_GET['get_next_sku'])) {
     $type   = $_GET['type'] ?? 'single';
@@ -86,6 +111,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (move_uploaded_file($_FILES['main_image']['tmp_name'], UPLOAD_PATH . 'products/' . $filename)) {
                     $mainImage = $filename;
                 }
+            }
+        } elseif (!empty($_POST['selected_media_file'])) {
+            // เลือกจากคลังรูป — copy ไปที่ products folder ถ้ายังไม่มี
+            $mediaFile = basename($_POST['selected_media_file']);
+            $src  = UPLOAD_PATH . 'media/' . $mediaFile;
+            $dest = UPLOAD_PATH . 'products/' . $mediaFile;
+            if (file_exists($src)) {
+                if (!file_exists($dest)) copy($src, $dest);
+                $mainImage = $mediaFile;
             }
         }
 
@@ -434,13 +468,18 @@ $currentType = $product['product_type'] ?? 'single';
     <div class="card mb-4">
         <div class="card-header"><span class="card-title">🖼️ รูปภาพ</span></div>
         <div class="card-body">
-            <div class="upload-zone mb-3" onclick="document.getElementById('mainImageInput').click()">
+            <div class="upload-zone mb-2" onclick="document.getElementById('mainImageInput').click()">
                 <div class="upload-icon">📷</div>
                 <p>คลิกหรือลากรูปภาพมาวาง</p>
                 <p style="font-size:0.75rem;">JPG, PNG, WEBP (แนะนำ 800x800)</p>
             </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100 mb-3"
+                    onclick="openMediaPicker()" style="font-size:.8rem;">
+                <i class="fas fa-images me-1"></i> เลือกจากคลังรูป
+            </button>
             <input type="file" id="mainImageInput" name="main_image" accept="image/*" class="d-none"
-                onchange="previewImage(this,'mainImagePreview')">
+                onchange="previewImage(this,'mainImagePreview');document.getElementById('selectedMediaFile').value=''">
+            <input type="hidden" id="selectedMediaFile" name="selected_media_file">
             <img id="mainImagePreview"
                 src="<?= $product['main_image'] ? SITE_URL.'/assets/uploads/products/'.htmlspecialchars($product['main_image']) : '' ?>"
                 style="width:100%;border-radius:12px;display:<?= $product['main_image']?'block':'none' ?>;"
@@ -528,6 +567,43 @@ $currentType = $product['product_type'] ?? 'single';
     <a href="<?= SITE_URL ?>/pages/products.php" class="btn btn-outline-secondary btn-lg">ยกเลิก</a>
 </div>
 </form>
+
+<!-- ── Media Picker Modal ──────────────────────────────────────────────────── -->
+<div class="modal fade" id="mediaPickerModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius:16px;border:none;">
+            <div class="modal-header" style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;border:none;border-radius:16px 16px 0 0;padding:14px 20px;">
+                <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                    <h5 class="modal-title mb-0" style="font-size:.95rem;"><i class="fas fa-images me-2"></i>คลังรูปภาพ</h5>
+                    <input type="text" id="mpSearch" class="form-control form-control-sm"
+                           placeholder="🔍 ค้นหา..." style="max-width:220px;border-radius:20px;"
+                           oninput="mpSearchTimer()">
+                </div>
+                <button type="button" class="btn-close btn-close-white ms-3" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3" style="background:#f8f5fc;">
+                <div id="mpGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;"></div>
+                <div id="mpEmpty" style="display:none;text-align:center;padding:48px 16px;color:#bbb;">
+                    <div style="font-size:2.5rem;">🖼️</div>
+                    <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
+                    <a href="<?= SITE_URL ?>/pages/media.php" target="_blank" class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
+                        ไปอัปโหลดรูป <i class="fas fa-external-link-alt ms-1"></i>
+                    </a>
+                </div>
+                <div id="mpLoading" style="text-align:center;padding:48px;color:#bbb;">
+                    <div class="spinner-border spinner-border-sm"></div><br>
+                    <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
+                </div>
+                <div id="mpLoadMore" style="display:none;text-align:center;padding:12px;">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="mpLoad(mpPage+1)">
+                        โหลดเพิ่ม
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 </div><!-- end container -->
 
 <style>
@@ -666,6 +742,23 @@ $currentType = $product['product_type'] ?? 'single';
         border-radius: 8px !important;
     }
 }
+
+/* ── Media picker grid ─────────────────────────────────────── */
+.mp-item {
+    position: relative; cursor: pointer; border-radius: 10px;
+    overflow: hidden; aspect-ratio: 1; background: #e8e0f0;
+    border: 2.5px solid transparent; transition: border-color .15s, transform .12s;
+}
+.mp-item:hover { border-color: #E91E8C; transform: scale(1.03); }
+.mp-item img   { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mp-item-title {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.55));
+    color: #fff; font-size: .62rem; padding: 14px 5px 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-align: center;
+}
+.mp-item:hover .mp-item-title { background: linear-gradient(transparent, rgba(233,30,140,.7)); }
 </style>
 
 <?php
@@ -1038,6 +1131,64 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 updateProfit();
 updateVariantSKUs();
+
+// ── MEDIA PICKER ─────────────────────────────────────────────────────────────
+let mpPage = 1, mpQuery = '', mpSearchDebounce = null, _mpModal = null;
+
+function openMediaPicker() {
+    _mpModal = new bootstrap.Modal(document.getElementById('mediaPickerModal'));
+    _mpModal.show();
+    document.getElementById('mpGrid').innerHTML = '';
+    document.getElementById('mpSearch').value = '';
+    mpPage = 1; mpQuery = '';
+    mpLoad(1);
+}
+
+function mpSearchTimer() {
+    clearTimeout(mpSearchDebounce);
+    mpSearchDebounce = setTimeout(() => {
+        mpQuery = document.getElementById('mpSearch').value.trim();
+        document.getElementById('mpGrid').innerHTML = '';
+        mpPage = 1;
+        mpLoad(1);
+    }, 320);
+}
+
+async function mpLoad(page) {
+    document.getElementById('mpLoading').style.display = page === 1 ? 'block' : 'none';
+    document.getElementById('mpEmpty').style.display = 'none';
+    document.getElementById('mpLoadMore').style.display = 'none';
+    const url = `?get_media_list=1&page=${page}&q=${encodeURIComponent(mpQuery)}`;
+    const data = await fetch(url).then(r => r.json());
+    document.getElementById('mpLoading').style.display = 'none';
+    const grid = document.getElementById('mpGrid');
+    if (!data.items.length && page === 1) {
+        document.getElementById('mpEmpty').style.display = 'block'; return;
+    }
+    data.items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'mp-item';
+        div.innerHTML = `<img src="${item.url}" loading="lazy" alt="${item.title}">
+            <div class="mp-item-title">${item.title}</div>`;
+        div.onclick = () => selectMediaImage(item.filename, item.url);
+        grid.appendChild(div);
+    });
+    mpPage = page;
+    const loaded = grid.children.length;
+    if (loaded < data.total) {
+        document.getElementById('mpLoadMore').style.display = 'block';
+        document.querySelector('#mpLoadMore button').onclick = () => mpLoad(mpPage + 1);
+    }
+}
+
+function selectMediaImage(filename, url) {
+    document.getElementById('selectedMediaFile').value = filename;
+    document.getElementById('mainImageInput').value = '';
+    const preview = document.getElementById('mainImagePreview');
+    preview.src = url;
+    preview.style.display = 'block';
+    _mpModal?.hide();
+}
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
