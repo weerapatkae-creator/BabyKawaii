@@ -196,15 +196,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                   FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
             ")->fetchAll(PDO::FETCH_ASSOC);
 
-            // คำนวณ committed stock — ดูว่าสินค้านี้ถูกใช้ในเซตไหนบ้าง
-            // committed = SUM(bi.quantity) ต่อ 1 เซต × จำนวนเซตที่ยัง active
-            // ง่ายๆ: นับจาก bundle_items ว่าสินค้านี้ถูก lock ไปกี่ชิ้นรวมกัน
+            // คำนวณ committed stock
+            // committed = SUM(bi.quantity × จำนวนเซตที่ยังมีในสต็อก)
+            // = bi.quantity (ต่อเซต) × COALESCE(SUM stock ของ bundle product)
             $committedMap = []; // [product_id][size][color] => committed_qty
             $bundleStmt = $pdo->query("
                 SELECT bi.product_id, bi.size, bi.color,
-                       SUM(bi.quantity) AS committed
+                       SUM(bi.quantity * COALESCE(bs.quantity, 0)) AS committed
                 FROM bundle_items bi
                 JOIN products bp ON bp.id = bi.bundle_id AND bp.status = 'active'
+                LEFT JOIN stock bs ON bs.product_id = bi.bundle_id
                 WHERE bi.product_id IN ($ids)
                 GROUP BY bi.product_id, bi.size, bi.color
             ");
@@ -2039,13 +2040,16 @@ function renderProduct(p) {
         ? `<img src="${esc(p.image_url)}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1px solid #eee;">`
         : `<div style="width:46px;height:46px;border-radius:8px;background:#f5f0f8;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem;">🧸</div>`;
 
-    // Stock badges per size
+    // Stock badges per size — แสดง available (หลังหักเซต)
     const badges = (p.stocks || []).map(s => {
-        const qty   = parseInt(s.quantity);
-        const alert = parseInt(s.min_alert);
-        const bg    = qty === 0 ? '#f0f0f0' : qty <= alert ? '#fff3cd' : '#d4edda';
-        const tc    = qty === 0 ? '#aaa'    : qty <= alert ? '#856404' : '#155724';
-        return `<span class="pf-stock-badge" style="background:${bg};color:${tc};">${esc(s.size)}: ${qty}</span>`;
+        const qty     = parseInt(s.quantity_available ?? s.quantity);
+        const qtyRaw  = parseInt(s.quantity);
+        const alert   = parseInt(s.min_alert);
+        const committed = parseInt(s.quantity_committed ?? 0);
+        const bg = qty === 0 ? '#f0f0f0' : qty <= alert ? '#fff3cd' : '#d4edda';
+        const tc = qty === 0 ? '#aaa'    : qty <= alert ? '#856404' : '#155724';
+        const note = committed > 0 ? ` <span style="color:#e67e22;font-size:.55rem;">(เซต-${committed})</span>` : '';
+        return `<span class="pf-stock-badge" style="background:${bg};color:${tc};">${esc(s.size)}: ${qty}${note}</span>`;
     }).join('');
 
     const price     = parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0});
