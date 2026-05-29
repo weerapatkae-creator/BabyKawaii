@@ -542,6 +542,52 @@ $currentType = $product['product_type'] ?? 'single';
 .bi-stock-low  { color:#856404; font-weight:600; }
 .bi-stock-out  { color:#dc3545; font-weight:600; }
 
+/* ── Mobile bundle table → card layout ────────────────────── */
+@media (max-width: 640px) {
+    #bundleSection .table-responsive { overflow: visible; }
+    #bundleSection table thead { display: none; }
+    #bundleSection table, #bundleSection tbody { display: block; }
+    #bundleSection tbody { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+
+    .bundle-item-row {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto;
+        gap: 6px;
+        background: #fff;
+        border: 1.5px solid #ede5f5 !important;
+        border-radius: 12px !important;
+        padding: 10px !important;
+        box-shadow: 0 1px 3px rgba(44,42,48,.06);
+    }
+    /* สินค้า — full width */
+    .bundle-item-row .bi-td-product { grid-column: 1 / -1; }
+    /* ไซต์ + สี — 2 columns */
+    .bundle-item-row .bi-td-size  { grid-column: 1; }
+    .bundle-item-row .bi-td-color { grid-column: 2; }
+    /* จำนวน + ราคา — side by side */
+    .bundle-item-row .bi-td-qty   { grid-column: 1; }
+    .bundle-item-row .bi-td-price { grid-column: 2; display:flex; align-items:center; justify-content:flex-end; font-weight:700; color:#c05a78 !important; }
+    /* สต็อก + delete */
+    .bundle-item-row .bi-td-stock { grid-column: 1; display:flex; align-items:center; font-size:0.78rem; }
+    .bundle-item-row .bi-td-del   { grid-column: 2; display:flex; align-items:center; justify-content:flex-end; }
+
+    /* Label above each cell */
+    .bundle-item-row td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.6rem;
+        font-weight: 700;
+        color: #9b72cf;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 3px;
+    }
+    .bundle-item-row .bi-td-del::before,
+    .bundle-item-row .bi-td-price::before,
+    .bundle-item-row .bi-td-stock::before { display: none; }
+}
+
 /* ── Mobile stock table → card layout ─────────────────────── */
 @media (max-width: 640px) {
     #stockTable thead { display: none; }
@@ -791,31 +837,31 @@ function addBundleItem(prefill = null) {
     tr.className = 'bundle-item-row';
     tr.dataset.idx = idx;
     tr.innerHTML = `
-        <td>
+        <td data-label="สินค้า" class="bi-td-product">
             <select name="bundle_items[${idx}][product_id]" class="form-select form-select-sm bi-product" onchange="onBiProductChange(this)">
                 <option value="">-- เลือกสินค้า --</option>${productOpts}
             </select>
         </td>
-        <td>
+        <td data-label="ไซต์" class="bi-td-size">
             <select name="bundle_items[${idx}][size]" class="form-select form-select-sm bi-size" onchange="onBiSizeChange(this)">
                 <option value="">-- ไซต์ --</option>
             </select>
         </td>
-        <td>
+        <td data-label="สี" class="bi-td-color">
             <select name="bundle_items[${idx}][color]" class="form-select form-select-sm bi-color" onchange="updateBundleSummary()">
                 <option value="">-- สี --</option>
             </select>
         </td>
-        <td>
+        <td data-label="จำนวน" class="bi-td-qty">
             <input type="number" name="bundle_items[${idx}][quantity]"
                 class="form-control form-control-sm bi-qty text-center"
                 value="${prefill?.quantity || 1}" min="1"
                 onchange="updateBundleSummary()">
         </td>
-        <td class="bi-price-cell text-end" style="color:var(--text-muted);">—</td>
-        <td class="bi-stock-cell text-center">—</td>
-        <td>
-            <button type="button" class="btn btn-sm btn-outline-danger"
+        <td class="bi-price-cell bi-td-price" data-label="ราคา" style="color:var(--text-muted);">—</td>
+        <td class="bi-stock-cell bi-td-stock" data-label="สต็อก" style="text-align:center;">—</td>
+        <td class="bi-td-del">
+            <button type="button" style="background:none;border:none;color:#ddd;cursor:pointer;font-size:0.85rem;padding:4px;"
                 onclick="this.closest('tr').remove(); checkBundleEmpty(); updateBundleSummary();">
                 <i class="fas fa-times"></i>
             </button>
