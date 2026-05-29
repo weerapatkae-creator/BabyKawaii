@@ -719,9 +719,11 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
         </div>
         <div class="bk-actions">
             <span class="badge-status badge-active" id="globalOpenBadge">เปิด <?= $stats['open_count'] ?? 0 ?></span>
-            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="openQrManager()"><i class="fas fa-bolt" style="font-size:.8rem"></i> ข้อความสำเร็จรูป</button>
-            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" id="btnTools" title="เครื่องมือ">
-                <i class="fas fa-toolbox" style="font-size:.8rem"></i> เครื่องมือ
+            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="openQrManager()" title="ข้อความสำเร็จรูป" style="padding:6px 9px;">
+                <i class="fas fa-bolt"></i>
+            </button>
+            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" id="btnTools" title="เครื่องมือ" style="padding:6px 9px;">
+                <i class="fas fa-sliders"></i>
             </button>
         </div>
     </div>
@@ -893,17 +895,9 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
                         </span>
                     </div>
                 </div>
-                <div class="d-flex gap-2 align-items-center flex-shrink-0">
-                    <select class="form-select form-select-sm" style="width:auto;font-size:0.78rem;" onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
-                        <option value="open"   <?= in_array($activeConv['status'],['open','pending'])?'selected':'' ?>>🟢 กำลังคุย</option>
-                        <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
-                    </select>
-                    <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
-                       class="btn btn-sm btn-outline-primary" title="ดูออเดอร์"
-                       target="_blank" rel="noopener">
-                        <i class="fas fa-box-open"></i>
-                    </a>
-                </div>
+                <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" title="เครื่องมือ" style="padding:6px 9px;flex-shrink:0;">
+                    <i class="fas fa-sliders"></i>
+                </button>
             </div>
 
             <!-- Messages area -->
@@ -950,17 +944,37 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 
             <!-- Header -->
             <div class="tools-head">
-                <span style="font-weight:700;font-size:0.85rem;">🛠️ เครื่องมือแอดมิน</span>
-                <button onclick="toggleTools()" style="background:none;border:none;cursor:pointer;color:#aaa;font-size:0.88rem;padding:2px 4px;line-height:1;" title="ปิด">
+                <span style="font-weight:700;font-size:0.85rem;">เครื่องมือ</span>
+                <button onclick="toggleTools()" title="ปิด">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
 
+            <!-- Conversation quick actions -->
+            <?php if ($activeConv): ?>
+            <div style="padding:10px 14px;border-bottom:1px solid #f0ebee;background:#fff;display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.72rem;color:#aaa;margin-bottom:3px;">สถานะสนทนา</div>
+                    <select id="toolsStatusSel" style="width:100%;border:1.5px solid #efe9ee;border-radius:8px;padding:5px 8px;font-size:0.78rem;font-family:inherit;background:#faf7f9;cursor:pointer;"
+                            onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
+                        <option value="open"   <?= in_array($activeConv['status'],['open','pending'])?'selected':'' ?>>🟢 กำลังคุย</option>
+                        <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
+                    </select>
+                </div>
+                <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
+                   target="_blank" rel="noopener"
+                   style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;background:#f5f0f8;border-radius:8px;text-decoration:none;color:#8a6db0;font-size:0.65rem;font-weight:600;flex-shrink:0;white-space:nowrap;border:1.5px solid #ede5f5;">
+                    <i class="fas fa-box-open" style="font-size:0.9rem;"></i>
+                    ออเดอร์
+                </a>
+            </div>
+            <?php endif; ?>
+
             <!-- Tabs -->
             <div class="tools-tabs">
-                <div class="tools-tab active" onclick="switchToolsTab('products')" id="ttab-products">🔍 สินค้า</div>
-                <div class="tools-tab" onclick="switchToolsTab('orders')"   id="ttab-orders">📋 ออเดอร์</div>
-                <div class="tools-tab" onclick="switchToolsTab('lowstock')" id="ttab-lowstock">⚠️ ต่ำ</div>
+                <div class="tools-tab active" onclick="switchToolsTab('products')" id="ttab-products">สินค้า</div>
+                <div class="tools-tab" onclick="switchToolsTab('orders')"   id="ttab-orders">สร้างออเดอร์</div>
+                <div class="tools-tab" onclick="switchToolsTab('lowstock')" id="ttab-lowstock">สต็อกต่ำ</div>
             </div>
 
             <!-- Tab: Products -->
