@@ -208,6 +208,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE); exit;
     }
 
+    // ── สร้างออเดอร์ใหม่จาก Inbox ──────────────────────────────────
+    if ($_POST['ajax'] === 'save_order') {
+        $custName  = trim($_POST['customer_name']  ?? '');
+        $custPhone = trim($_POST['customer_phone'] ?? '');
+        $custAddr  = trim($_POST['customer_addr']  ?? '');
+        $note      = trim($_POST['note']           ?? '');
+        $convId    = (int)($_POST['conv_id']       ?? 0);
+        $items     = json_decode($_POST['items']   ?? '[]', true);
+
+        if (!$custName || empty($items)) {
+            echo json_encode(['ok'=>false,'error'=>'กรุณากรอกชื่อลูกค้าและเลือกสินค้า']);
+            exit;
+        }
+
+        // หา platform_id จาก conversation
+        $conv = $pdo->prepare("SELECT platform_id FROM conversations WHERE id=? LIMIT 1");
+        $conv->execute([$convId]);
+        $convRow = $conv->fetch();
+        $platformId = $convRow['platform_id'] ?? null;
+
+        // สร้างเลขออเดอร์
+        $orderNum = 'BK' . date('ymd') . strtoupper(substr(uniqid(), -4));
+
+        // คำนวณยอดรวม
+        $total = array_sum(array_map(fn($i) => (float)($i['price']??0) * (int)($i['qty']??1), $items));
+
+        // Insert order
+        $pdo->prepare("
+            INSERT INTO orders (order_number,customer_name,customer_phone,shipping_address,
+                                total_amount,order_status,payment_status,platform_id,notes,order_date)
+            VALUES (?,?,?,?,?,'pending','unpaid',?,?,NOW())
+        ")->execute([$orderNum,$custName,$custPhone,$custAddr,$total,$platformId,$note]);
+        $orderId = (int)$pdo->lastInsertId();
+
+        // Insert order items
+        foreach ($items as $item) {
+            $pid   = (int)($item['product_id'] ?? 0);
+            $pname = trim($item['name'] ?? '');
+            $size  = trim($item['size'] ?? '');
+            $qty   = max(1,(int)($item['qty'] ?? 1));
+            $price = (float)($item['price'] ?? 0);
+            if (!$pid && !$pname) continue;
+            $pdo->prepare("
+                INSERT INTO order_items (order_id,product_id,product_name,size,quantity,unit_price,total_price)
+                VALUES (?,?,?,?,?,?,?)
+            ")->execute([$orderId,$pid?:null,$pname,$size,$qty,$price,$price*$qty]);
+        }
+
+        echo json_encode(['ok'=>true,'order_id'=>$orderId,'order_number'=>$orderNum,'total'=>$total],
+                         JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ── ดึงข้อมูลออเดอร์สำหรับพิมพ์ ────────────────────────────────
+    if ($_POST['ajax'] === 'get_order_print') {
+        $orderId = (int)($_POST['order_id'] ?? 0);
+        $order = $pdo->prepare("
+            SELECT o.*, p.name AS platform_name
+            FROM orders o LEFT JOIN platforms p ON p.id=o.platform_id
+            WHERE o.id=?
+        ");
+        $order->execute([$orderId]);
+        $o = $order->fetch(PDO::FETCH_ASSOC);
+        if (!$o) { echo json_encode(['ok'=>false]); exit; }
+
+        $items = $pdo->prepare("SELECT * FROM order_items WHERE order_id=? ORDER BY id");
+        $items->execute([$orderId]);
+        $o['items'] = $items->fetchAll(PDO::FETCH_ASSOC);
+        $o['shop_name'] = getSetting('shop_name','BabyKawaii Shop');
+        echo json_encode(['ok'=>true,'order'=>$o], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     echo json_encode(['ok'=>false]);
     exit;
 }
@@ -620,6 +693,21 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 #btnTools.active { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border-color:transparent; }
 /* Tools pane padding for cards */
 #productResults, #orderResults, #lowStockResults { padding:8px 0 12px; display:flex; flex-direction:column; }
+
+/* Order form */
+.order-mode-btn { flex:1; padding:6px 4px; border:1.5px solid #f0d6de; background:#fff; border-radius:8px; font-size:0.74rem; font-weight:600; cursor:pointer; color:#aaa; transition:all .15s; font-family:inherit; }
+.order-mode-btn.active { background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border-color:transparent; }
+.order-section-label { font-size:0.72rem; font-weight:700; color:#c05a78; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
+.order-input { width:100%; border:1.5px solid #efe9ee; border-radius:8px; padding:7px 10px; font-size:0.79rem; font-family:inherit; background:#faf7f9; color:#2c2a30; margin-bottom:6px; transition:border-color .15s; display:block; }
+.order-input:focus { outline:none; border-color:#e8869b; background:#fff; }
+.order-item-row { background:#fff; border:1.5px solid #efe9ee; border-radius:10px; padding:8px 10px; margin-bottom:6px; position:relative; }
+.order-item-row select { width:100%; border:1.5px solid #efe9ee; border-radius:7px; padding:5px 8px; font-size:0.76rem; font-family:inherit; background:#faf7f9; margin-bottom:5px; }
+.order-item-row input { border:1.5px solid #efe9ee; border-radius:7px; padding:5px 8px; font-size:0.76rem; font-family:inherit; background:#faf7f9; }
+.order-item-row input:focus, .order-item-row select:focus { outline:none; border-color:#e8869b; }
+.order-save-btn { flex:1; background:linear-gradient(135deg,#FF85A2,#d4629e); color:#fff; border:none; border-radius:9px; padding:10px; font-size:0.82rem; font-weight:700; cursor:pointer; font-family:inherit; transition:opacity .15s; }
+.order-save-btn:hover { opacity:0.88; }
+.order-print-btn { background:#fff; color:#c05a78; border:1.5px solid #f0d6de; border-radius:9px; padding:10px 14px; font-size:0.82rem; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; }
+.order-print-btn:hover { background:#fff0f5; }
 </style>
 
 <div class="bk-page fade-in" style="padding-bottom:0" id="inboxApp">
@@ -890,15 +978,66 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 
             <!-- Tab: Orders -->
             <div class="tools-pane" id="tpane-orders" style="display:none;">
-                <div class="tools-search-box">
-                    <input type="text" id="orderSearch"
-                           placeholder="🔍 ชื่อลูกค้า / เลขออเดอร์..."
-                           oninput="debounceOrderSearch(this.value)"
-                           autocomplete="off">
+
+                <!-- Toggle buttons -->
+                <div style="display:flex;gap:6px;padding:10px 12px 0;flex-shrink:0;">
+                    <button class="order-mode-btn active" id="btnModeNew" onclick="setOrderMode('new')">
+                        <i class="fas fa-plus-circle"></i> สร้างออเดอร์
+                    </button>
+                    <button class="order-mode-btn" id="btnModeSearch" onclick="setOrderMode('search')">
+                        <i class="fas fa-search"></i> ค้นหา
+                    </button>
                 </div>
-                <div id="orderResults">
-                    <div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>
+
+                <!-- Mode: New Order -->
+                <div id="orderModeNew" style="overflow-y:auto;flex:1;padding:10px 12px;">
+
+                    <!-- Customer info -->
+                    <div class="order-section-label">ข้อมูลลูกค้า</div>
+                    <input type="text" class="order-input" id="oName" placeholder="ชื่อลูกค้า *">
+                    <input type="text" class="order-input" id="oPhone" placeholder="เบอร์โทรศัพท์">
+                    <textarea class="order-input" id="oAddr" placeholder="ที่อยู่จัดส่ง" rows="2" style="resize:none;"></textarea>
+
+                    <!-- Products -->
+                    <div class="order-section-label" style="margin-top:10px;">
+                        สินค้า
+                        <button onclick="addOrderItem()" style="float:right;background:none;border:none;color:#c05a78;font-size:0.75rem;cursor:pointer;font-weight:600;">
+                            + เพิ่มรายการ
+                        </button>
+                    </div>
+                    <div id="orderItems"></div>
+
+                    <!-- Total -->
+                    <div style="background:#fff8fb;border:1.5px solid #f0d6de;border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.8rem;color:#888;">ยอดรวมทั้งหมด</span>
+                        <span style="font-size:1.1rem;font-weight:800;color:#c05a78;" id="orderTotal">฿0</span>
+                    </div>
+
+                    <!-- Note -->
+                    <textarea class="order-input" id="oNote" placeholder="หมายเหตุ (ถ้ามี)" rows="2" style="resize:none;margin-top:8px;"></textarea>
+
+                    <!-- Actions -->
+                    <div style="display:flex;gap:6px;margin-top:10px;">
+                        <button class="order-save-btn" onclick="saveOrder()">
+                            <i class="fas fa-save"></i> บันทึกออเดอร์
+                        </button>
+                    </div>
+                    <div id="orderSaveMsg" style="margin-top:6px;font-size:0.78rem;"></div>
                 </div>
+
+                <!-- Mode: Search Orders -->
+                <div id="orderModeSearch" style="display:none;flex:1;flex-direction:column;">
+                    <div class="tools-search-box">
+                        <input type="text" id="orderSearch"
+                               placeholder="🔍 ชื่อลูกค้า / เลขออเดอร์..."
+                               oninput="debounceOrderSearch(this.value)"
+                               autocomplete="off">
+                    </div>
+                    <div id="orderResults" style="overflow-y:auto;flex:1;padding:8px 0;">
+                        <div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- Tab: Low Stock -->
@@ -1444,16 +1583,206 @@ function switchToolsTab(tab) {
         setTimeout(() => inp && inp.focus(), 100);
     }
     if (tab === 'orders') {
-        const inp = document.getElementById('orderSearch');
-        if (ACTIVE_CUSTOMER && inp && !inp.value) {
-            inp.value = ACTIVE_CUSTOMER;
-            searchOrders(ACTIVE_CUSTOMER);
-        } else if (inp && inp.value) {
-            searchOrders(inp.value);
-        }
-        setTimeout(() => inp && inp.focus(), 100);
+        // auto-fill customer name in form
+        const oName = document.getElementById('oName');
+        if (oName && !oName.value && ACTIVE_CUSTOMER) oName.value = ACTIVE_CUSTOMER;
+        if (!document.getElementById('orderItems').children.length) addOrderItem();
     }
     if (tab === 'lowstock' && !_lowLoaded) loadLowStock();
+}
+
+/* ── Order Form ───────────────────────────────────────────────── */
+let _allProducts = []; // cache
+let _orderItemCount = 0;
+
+function setOrderMode(mode) {
+    document.getElementById('orderModeNew').style.display    = mode === 'new'    ? 'flex' : 'none';
+    document.getElementById('orderModeSearch').style.display = mode === 'search' ? 'flex' : 'none';
+    document.getElementById('btnModeNew').classList.toggle('active', mode === 'new');
+    document.getElementById('btnModeSearch').classList.toggle('active', mode === 'search');
+    document.getElementById('orderModeNew').style.flexDirection = 'column';
+    document.getElementById('orderModeSearch').style.flexDirection = 'column';
+}
+
+async function ensureProducts() {
+    if (_allProducts.length) return;
+    const r = await fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'ajax=products_search&q=' });
+    _allProducts = await r.json();
+}
+
+function addOrderItem() {
+    ensureProducts();
+    const idx = _orderItemCount++;
+    const div = document.createElement('div');
+    div.className = 'order-item-row';
+    div.id = `oitem-${idx}`;
+    div.innerHTML = `
+        <button onclick="removeOrderItem(${idx})" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#ddd;cursor:pointer;font-size:0.8rem;" title="ลบ"><i class="fas fa-times"></i></button>
+        <select onchange="fillOrderItem(${idx},this.value)" style="margin-bottom:5px;">
+            <option value="">-- เลือกสินค้า --</option>
+        </select>
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+            <select id="osize-${idx}" style="flex:1;min-width:60px;" onchange="calcTotal()">
+                <option value="">ไซส์</option>
+            </select>
+            <input type="number" id="oqty-${idx}" value="1" min="1" placeholder="จำนวน"
+                   style="width:55px;" oninput="calcTotal()">
+            <input type="number" id="oprice-${idx}" placeholder="ราคา" step="0.01"
+                   style="width:75px;" oninput="calcTotal()">
+        </div>
+        <div id="ostock-${idx}" style="font-size:0.68rem;color:#aaa;margin-top:3px;"></div>
+    `;
+    document.getElementById('orderItems').appendChild(div);
+
+    // fill product options
+    const sel = div.querySelector('select');
+    (_allProducts.length ? Promise.resolve() : ensureProducts()).then(() => {
+        _allProducts.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = `${p.name} (฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})})`;
+            opt.dataset.price = p.selling_price;
+            opt.dataset.stocks = JSON.stringify(p.stocks || []);
+            sel.appendChild(opt);
+        });
+    });
+}
+
+function fillOrderItem(idx, productId) {
+    const prod = _allProducts.find(p => p.id == productId);
+    if (!prod) return;
+    const priceInp = document.getElementById(`oprice-${idx}`);
+    const sizeSel  = document.getElementById(`osize-${idx}`);
+    const stockDiv = document.getElementById(`ostock-${idx}`);
+
+    priceInp.value = parseFloat(prod.selling_price).toFixed(0);
+    sizeSel.innerHTML = '<option value="">ไซส์</option>';
+    (prod.stocks || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.size;
+        opt.textContent = `${s.size} (คงเหลือ: ${s.quantity})`;
+        opt.disabled = s.quantity == 0;
+        sizeSel.appendChild(opt);
+    });
+    stockDiv.textContent = (prod.stocks || []).map(s => `${s.size}:${s.quantity}`).join(' ') || '';
+    calcTotal();
+}
+
+function removeOrderItem(idx) {
+    const el = document.getElementById(`oitem-${idx}`);
+    if (el) el.remove();
+    calcTotal();
+}
+
+function calcTotal() {
+    let total = 0;
+    document.querySelectorAll('.order-item-row').forEach(row => {
+        const idx   = row.id.replace('oitem-','');
+        const qty   = parseFloat(document.getElementById(`oqty-${idx}`)?.value || 0);
+        const price = parseFloat(document.getElementById(`oprice-${idx}`)?.value || 0);
+        total += qty * price;
+    });
+    document.getElementById('orderTotal').textContent = '฿' + total.toLocaleString('th-TH', {maximumFractionDigits:0});
+}
+
+function saveOrder() {
+    const name  = document.getElementById('oName').value.trim();
+    const phone = document.getElementById('oPhone').value.trim();
+    const addr  = document.getElementById('oAddr').value.trim();
+    const note  = document.getElementById('oNote').value.trim();
+    const msg   = document.getElementById('orderSaveMsg');
+
+    if (!name) { msg.innerHTML = '<span style="color:#e74c3c;">กรุณากรอกชื่อลูกค้า</span>'; return; }
+
+    const items = [];
+    document.querySelectorAll('.order-item-row').forEach(row => {
+        const idx   = row.id.replace('oitem-','');
+        const sel   = row.querySelector('select');
+        const pid   = sel?.value || '';
+        const pname = sel?.options[sel.selectedIndex]?.text?.split(' (฿')[0] || '';
+        const size  = document.getElementById(`osize-${idx}`)?.value || '';
+        const qty   = parseInt(document.getElementById(`oqty-${idx}`)?.value || 1);
+        const price = parseFloat(document.getElementById(`oprice-${idx}`)?.value || 0);
+        if (price > 0) items.push({ product_id: pid, name: pname, size, qty, price });
+    });
+
+    if (!items.length) { msg.innerHTML = '<span style="color:#e74c3c;">กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ</span>'; return; }
+
+    msg.innerHTML = '<span style="color:#888;">กำลังบันทึก...</span>';
+
+    fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ ajax:'save_order', customer_name:name, customer_phone:phone,
+            customer_addr:addr, note, conv_id: CONV_ID||'', items: JSON.stringify(items) })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.ok) {
+            msg.innerHTML = `<span style="color:#27ae60;">✅ บันทึกแล้ว! #${res.order_number}</span>
+                <button class="order-print-btn" style="display:inline-block;padding:4px 10px;font-size:0.74rem;margin-left:6px;"
+                        onclick="printOrder(${res.order_id})">🖨️ พิมพ์ใบสั่งซื้อ</button>`;
+        } else {
+            msg.innerHTML = `<span style="color:#e74c3c;">${esc(res.error||'เกิดข้อผิดพลาด')}</span>`;
+        }
+    })
+    .catch(() => { msg.innerHTML = '<span style="color:#e74c3c;">บันทึกไม่สำเร็จ</span>'; });
+}
+
+function printOrder(orderId) {
+    fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ ajax:'get_order_print', order_id: orderId })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.ok) return;
+        const o = res.order;
+        const items = (o.items || []).map(i =>
+            `<tr><td>${esc(i.product_name)}${i.size?' ('+esc(i.size)+')':''}</td>
+             <td style="text-align:center;">${i.quantity}</td>
+             <td style="text-align:right;">฿${parseFloat(i.unit_price).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
+             <td style="text-align:right;">฿${parseFloat(i.total_price).toLocaleString('th-TH',{maximumFractionDigits:0})}</td></tr>`
+        ).join('');
+        const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+            <title>ใบสั่งซื้อ #${esc(o.order_number)}</title>
+            <style>
+                * { box-sizing:border-box; margin:0; padding:0; }
+                body { font-family:'Sarabun','Noto Sans Thai',sans-serif; font-size:13px; color:#222; padding:20px; max-width:500px; margin:auto; }
+                h1 { font-size:1.2rem; text-align:center; margin-bottom:4px; }
+                .shop { text-align:center; color:#c05a78; font-weight:700; font-size:1.1rem; margin-bottom:16px; }
+                .section { margin:12px 0; }
+                .label { font-size:0.75rem; color:#888; }
+                .value { font-weight:600; }
+                table { width:100%; border-collapse:collapse; margin-top:8px; }
+                th { background:#fce4ec; padding:6px; text-align:left; font-size:0.78rem; }
+                td { padding:5px 6px; border-bottom:1px solid #f5f5f5; font-size:0.82rem; }
+                .total-row td { font-weight:800; font-size:1rem; color:#c05a78; border-top:2px solid #f0d6de; border-bottom:none; padding-top:8px; }
+                .footer { text-align:center; margin-top:20px; font-size:0.75rem; color:#bbb; }
+                @media print { body { padding:10px; } button { display:none; } }
+            </style></head><body>
+            <div class="shop">${esc(o.shop_name)}</div>
+            <h1>ใบสั่งซื้อ / Order</h1>
+            <p style="text-align:center;color:#888;font-size:0.78rem;margin-bottom:16px;">#${esc(o.order_number)}</p>
+            <div class="section">
+                <div><span class="label">ชื่อลูกค้า:</span> <span class="value">${esc(o.customer_name)}</span></div>
+                ${o.customer_phone?`<div><span class="label">โทร:</span> <span class="value">${esc(o.customer_phone)}</span></div>`:''}
+                ${o.shipping_address?`<div><span class="label">ที่อยู่:</span> ${esc(o.shipping_address)}</div>`:''}
+                <div><span class="label">วันที่:</span> ${(o.order_date||'').substring(0,10)}</div>
+            </div>
+            <table>
+                <thead><tr><th>สินค้า</th><th style="text-align:center;">จำนวน</th><th style="text-align:right;">ราคา/ชิ้น</th><th style="text-align:right;">รวม</th></tr></thead>
+                <tbody>${items}
+                <tr class="total-row"><td colspan="3">ยอดรวมทั้งหมด</td><td style="text-align:right;">฿${parseFloat(o.total_amount).toLocaleString('th-TH',{maximumFractionDigits:0})}</td></tr>
+                </tbody>
+            </table>
+            ${o.notes?`<div class="section"><span class="label">หมายเหตุ:</span> ${esc(o.notes)}</div>`:''}
+            <div class="footer">ขอบคุณที่อุดหนุน 💕 ${esc(o.shop_name)}</div>
+            <br><button onclick="window.print()" style="width:100%;padding:10px;background:#c05a78;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-family:inherit;">🖨️ พิมพ์</button>
+            </body></html>`;
+
+        const w = window.open('','_blank','width=540,height=700');
+        w.document.write(html);
+        w.document.close();
+        setTimeout(() => w.print(), 600);
+    });
 }
 
 /* ── Products ─────────────────────────────────────────────────── */
