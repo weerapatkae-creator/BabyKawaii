@@ -951,7 +951,8 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
             </div>
 
             <?php else: ?>
-            <div class="inbox-empty">
+            <!-- Empty state (hidden when conv loads via AJAX) -->
+            <div class="inbox-empty" id="chatEmptyState">
                 <i class="fas fa-comments fa-3x opacity-25"></i>
                 <div style="font-size:0.88rem;">เลือกบทสนทนาจากรายการซ้าย</div>
                 <?php if (empty($conversations)): ?>
@@ -959,6 +960,35 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
                     ยังไม่มีข้อความ — เชื่อมต่อ Facebook/Instagram/TikTok ผ่าน n8n webhook แล้วข้อความจากลูกค้าจะปรากฏที่นี่
                 </div>
                 <?php endif; ?>
+            </div>
+            <!-- Chat structure (always in DOM, shown via AJAX) -->
+            <div class="chat-head" id="chatHead" style="display:none;">
+                <button class="btn btn-sm btn-outline-secondary d-md-none me-1" onclick="backToList()" style="padding:5px 10px;font-size:0.8rem;">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <div class="conv-avatar" id="chatHeadAvatar" style="width:38px;height:38px;font-size:0.9rem;overflow:hidden;background:linear-gradient(135deg,#FF85A2,#9B72CF);">?</div>
+                <div class="chat-head-info">
+                    <div class="chat-head-name"><span class="live-dot" id="liveDot"></span><span id="chatHeadName">—</span></div>
+                    <div class="chat-head-meta d-flex align-items-center gap-2 flex-wrap" id="chatHeadMeta"></div>
+                </div>
+                <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" title="เครื่องมือ" style="padding:6px 9px;flex-shrink:0;">
+                    <i class="fas fa-sliders"></i>
+                </button>
+            </div>
+            <div class="chat-messages" id="chatMessages" style="display:none;"></div>
+            <div class="chat-reply" id="chatReply" style="display:none;">
+                <div class="qr-chips" id="qrChips">
+                    <?php foreach ($quickReplies as $qr): ?>
+                    <span class="qr-chip" data-content="<?= htmlspecialchars($qr['content'], ENT_QUOTES) ?>"
+                          onclick="useQR(this.dataset.content)"><?= htmlspecialchars($qr['label']) ?></span>
+                    <?php endforeach; ?>
+                </div>
+                <div class="reply-input-row">
+                    <textarea id="replyText" class="reply-textarea" placeholder="พิมพ์ข้อความ... (Enter = ส่ง, Shift+Enter = ขึ้นบรรทัด)" rows="1"
+                              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply();}"
+                              oninput="autoResize(this)"></textarea>
+                    <button class="btn-send" id="btnSend" onclick="sendReply()">ส่ง ➤</button>
+                </div>
             </div>
             <?php endif; ?>
         </div><!-- /inbox-chat -->
@@ -1267,11 +1297,19 @@ async function openConv(id) {
     // 3. Mobile: slide to chat panel
     document.getElementById('inboxWrap')?.classList.add('mob-chat');
 
-    // 4. Show skeleton loading in chat
-    const msgs = document.getElementById('chatMessages');
+    // 4. Show chat structure, hide empty state
+    const emptyState = document.getElementById('chatEmptyState');
+    const chatHead   = document.getElementById('chatHead');
+    const chatReply  = document.getElementById('chatReply');
+    const msgs       = document.getElementById('chatMessages');
+    if (emptyState) emptyState.style.display = 'none';
+    if (chatHead)   { chatHead.style.display = 'flex'; }
+    if (chatReply)  chatReply.style.display = 'block';
     if (msgs) {
+        msgs.style.display = 'flex';
         msgs.style.opacity = '0.4';
         msgs.style.transition = 'opacity .18s';
+        msgs.innerHTML = '<div class="msg-system"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
     }
 
     // 5. Fetch conv info + messages in parallel
@@ -1326,38 +1364,33 @@ async function openConv(id) {
 }
 
 function updateChatHead(info, convId) {
-    const head = document.querySelector('.chat-head');
-    if (!head) return;
-
     // Avatar
-    const avatarDiv = head.querySelector('.conv-avatar');
+    const avatarDiv = document.getElementById('chatHeadAvatar');
     if (avatarDiv) {
         if (info.avatar_url) {
-            avatarDiv.innerHTML = `
-                <img src="${esc(info.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
-                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            avatarDiv.innerHTML = `<img src="${esc(info.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                 <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;">${esc(info.initial)}</span>`;
             avatarDiv.style.background = '';
         } else {
             avatarDiv.innerHTML = esc(info.initial);
             avatarDiv.style.background = info.platform_color
                 ? `linear-gradient(135deg,${info.platform_color},${adjustColorJS(info.platform_color)})`
-                : '';
+                : 'linear-gradient(135deg,#FF85A2,#9B72CF)';
         }
     }
 
     // Name
-    const nameDiv = head.querySelector('.chat-head-name');
-    if (nameDiv) nameDiv.innerHTML = `<span class="live-dot" id="liveDot" title="Real-time"></span>${esc(info.customer_name || 'ไม่ระบุชื่อ')}`;
+    const nameEl = document.getElementById('chatHeadName');
+    if (nameEl) nameEl.textContent = info.customer_name || 'ไม่ระบุชื่อ';
 
-    // Platform badge
-    const metaDiv = head.querySelector('.chat-head-meta');
+    // Platform badges
+    const metaDiv = document.getElementById('chatHeadMeta');
     if (metaDiv) {
         let meta = '';
         if (info.platform_name) meta += `<span style="background:${info.platform_color||'#888'};color:#fff;padding:3px 9px;border-radius:10px;font-size:0.68rem;">${esc(info.platform_name)}</span>`;
-        if (info.account_name) meta += `<span style="background:${info.account_color||'#888'};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">${esc(info.account_name)}</span>`;
-        metaDiv.innerHTML = meta + `<span class="text-muted" style="font-size:0.7rem;">UID: ${esc(info.customer_uid||'')}</span>
-            <span id="typingIndicator" style="display:none;font-size:0.72rem;color:#aaa;">กำลังพิมพ์<span class="typing-dot ms-1"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>`;
+        if (info.account_name)  meta += `<span style="background:${info.account_color||'#888'};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">${esc(info.account_name)}</span>`;
+        metaDiv.innerHTML = meta;
     }
 
     // Tools panel status select
