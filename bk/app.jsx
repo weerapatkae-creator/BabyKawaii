@@ -23,6 +23,14 @@ function BKApp() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [page, setPage] = React.useState("dashboard");
   const [sbOpen, setSbOpen] = React.useState(false);
+  const [orders, setOrders] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem("bk-orders");
+      return saved ? JSON.parse(saved) : window.BK_DATA.orders;
+    } catch (e) {
+      return window.BK_DATA.orders;
+    }
+  });
 
   const dir = DIR_MAP[t.direction] || "a";
   const theme = t.theme === "มืด" ? "dark" : "light";
@@ -34,8 +42,34 @@ function BKApp() {
     document.body.setAttribute("data-theme", theme);
   }, [t.emoji, theme]);
 
+  React.useEffect(() => {
+    localStorage.setItem("bk-orders", JSON.stringify(orders));
+  }, [orders]);
+
   const toggleTheme = () => setTweak("theme", theme === "dark" ? "สว่าง" : "มืด");
   const go = (p) => { setPage(p); window.scrollTo({ top: 0 }); };
+  const createOrder = ({ convo, product, size, qty, total }) => {
+    const maxNumber = orders.reduce((max, order) => {
+      const n = Number(String(order.number || "").replace(/\D/g, ""));
+      return Number.isFinite(n) ? Math.max(max, n) : max;
+    }, 26049);
+    const now = new Date();
+    const order = {
+      id: Date.now(),
+      number: `#BK${maxNumber + 1}`,
+      customer: convo.name,
+      platform: convo.platform,
+      total,
+      items: qty,
+      status: "pending",
+      date: `${now.getDate()}/${String(now.getMonth() + 1).padStart(2, "0")}`,
+      time: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
+      product: product.name,
+      size,
+    };
+    setOrders((list) => [order, ...list]);
+    return order;
+  };
 
   const rootStyle = { "--accent": accent[0], "--accent-strong": accent[1] };
 
@@ -53,8 +87,8 @@ function BKApp() {
   else if (page === "products") screen = <Products go={go} />;
   else if (page === "product-add") screen = <ProductAdd go={go} />;
   else if (page === "stock") screen = <Stock go={go} />;
-  else if (page === "orders") screen = <Orders go={go} />;
-  else if (page === "inbox") screen = <Inbox />;
+  else if (page === "orders") screen = <Orders go={go} orders={orders} />;
+  else if (page === "inbox") screen = <Inbox go={go} onCreateOrder={createOrder} />;
   else if (page === "sales") screen = <Sales dir={dir} />;
   else if (page === "customers") screen = <Customers />;
   else if (page === "media") screen = <Media />;

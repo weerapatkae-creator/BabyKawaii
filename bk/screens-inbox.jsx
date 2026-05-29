@@ -125,7 +125,7 @@ function ShipTool({ convo }) {
   );
 }
 
-function OrderTool({ onDone }) {
+function OrderTool({ onCreate, onDone }) {
   const d = window.BK_DATA;
   const [pi, setPi] = React.useState(0);
   const [size, setSize] = React.useState("0-3M");
@@ -162,7 +162,10 @@ function OrderTool({ onDone }) {
         <span style={{ color: "var(--accent-strong)", fontWeight: 600 }}>ยอดรวม</span>
         <span className="bk-num" style={{ fontWeight: 800, fontSize: "1.3rem", color: "var(--accent-strong)" }}>{fmt(total)}</span>
       </div>
-      <button className="bk-btn bk-btn--primary" style={{ width: "100%", justifyContent: "center", marginTop: 12 }} onClick={onDone}>
+      <button className="bk-btn bk-btn--primary" style={{ width: "100%", justifyContent: "center", marginTop: 12 }} onClick={() => {
+        const order = onCreate ? onCreate({ product: p, size, qty, total }) : null;
+        onDone && onDone(order);
+      }}>
         <BKIcon name="check" size={15} /> สร้างคำสั่งซื้อ
       </button>
     </div>
@@ -236,7 +239,7 @@ function RepliesTool({ replies, setReplies, onUse }) {
   );
 }
 
-function Inbox() {
+function Inbox({ go, onCreateOrder }) {
   const [active, setActive] = React.useState(BK_CONVOS[0].id);
   const [draft, setDraft] = React.useState("");
   const [openThread, setOpenThread] = React.useState(false);
@@ -339,7 +342,15 @@ function Inbox() {
                 {tool === "replies" && <RepliesTool replies={replies} setReplies={setReplies} onUse={(t) => { setDraft(t); setTool(null); }} />}
                 {tool === "stock" && <StockTool />}
                 {tool === "ship" && <ShipTool convo={convo} />}
-                {tool === "order" && <OrderTool onDone={() => setTool(null)} />}
+                {tool === "order" && <OrderTool
+                  onCreate={(payload) => onCreateOrder ? onCreateOrder({ ...payload, convo }) : null}
+                  onDone={(order) => {
+                    setTool(null);
+                    if (order) {
+                      setDraft(`สร้างคำสั่งซื้อ ${order.number} แล้ว`);
+                    }
+                  }}
+                />}
               </div>
             </div>
           )}

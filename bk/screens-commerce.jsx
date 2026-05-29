@@ -1,16 +1,16 @@
 /* ===== BabyKawaii — Orders / Sales ===== */
 
-function Orders({ go }) {
+function Orders({ go, orders = window.BK_DATA.orders }) {
   const d = window.BK_DATA;
   const [status, setStatus] = React.useState("all");
-  const counts = d.orders.reduce((m, o) => { m[o.status] = (m[o.status] || 0) + 1; return m; }, {});
-  const tabs = [["all", "ทั้งหมด", d.orders.length], ["pending", "รอดำเนินการ", counts.pending || 0], ["confirmed", "ยืนยันแล้ว", counts.confirmed || 0], ["packing", "กำลังแพ็ค", counts.packing || 0], ["shipped", "จัดส่งแล้ว", counts.shipped || 0], ["delivered", "ส่งถึงแล้ว", counts.delivered || 0]];
-  const list = d.orders.filter((o) => status === "all" || o.status === status);
+  const counts = orders.reduce((m, o) => { m[o.status] = (m[o.status] || 0) + 1; return m; }, {});
+  const tabs = [["all", "ทั้งหมด", orders.length], ["pending", "รอดำเนินการ", counts.pending || 0], ["confirmed", "ยืนยันแล้ว", counts.confirmed || 0], ["packing", "กำลังแพ็ค", counts.packing || 0], ["shipped", "จัดส่งแล้ว", counts.shipped || 0], ["delivered", "ส่งถึงแล้ว", counts.delivered || 0]];
+  const list = orders.filter((o) => status === "all" || o.status === status);
   const flow = ["pending", "confirmed", "packing", "shipped", "delivered"];
 
   return (
     <div className="bk-page">
-      <PageHead title="ออเดอร์ / คำสั่งซื้อ" sub={`${d.orders.length} ออเดอร์ · รอดำเนินการ ${counts.pending || 0} รายการ`}>
+      <PageHead title="ออเดอร์ / คำสั่งซื้อ" sub={`${orders.length} ออเดอร์ · รอดำเนินการ ${counts.pending || 0} รายการ`}>
         <button className="bk-btn bk-btn--ghost"><BKIcon name="download" size={15} /> ส่งออก</button>
         <button className="bk-btn bk-btn--primary"><BKIcon name="plus" size={15} /> บันทึกออเดอร์</button>
       </PageHead>
