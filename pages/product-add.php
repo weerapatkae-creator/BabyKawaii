@@ -332,7 +332,7 @@ $currentType = $product['product_type'] ?? 'single';
                         if (empty($existingColors)) $existingColors = ['ขาว'];
                         foreach ($existingColors as $color): ?>
                         <tr class="stock-row" style="border-bottom:1px solid #f5f0f5;">
-                            <td style="padding:6px 8px;">
+                            <td data-label="สี" style="padding:6px 8px;">
                                 <input type="text" class="form-control form-control-sm color-input"
                                        list="colorList" placeholder="สี..."
                                        value="<?= htmlspecialchars($color) ?>"
@@ -340,7 +340,7 @@ $currentType = $product['product_type'] ?? 'single';
                                        style="border-radius:7px;font-size:0.82rem;">
                             </td>
                             <?php foreach ($sizes as $sz): ?>
-                            <td style="padding:5px 4px;text-align:center;">
+                            <td data-label="<?= $sz ?>" style="padding:5px 4px;text-align:center;">
                                 <input type="number" name="stock[<?= $sz ?>][<?= htmlspecialchars($color) ?>][qty]"
                                        class="form-control form-control-sm stock-qty text-center"
                                        placeholder="—" min="0"
@@ -541,6 +541,63 @@ $currentType = $product['product_type'] ?? 'single';
 .bi-stock-ok   { color:#198754; font-weight:600; }
 .bi-stock-low  { color:#856404; font-weight:600; }
 .bi-stock-out  { color:#dc3545; font-weight:600; }
+
+/* ── Mobile stock table → card layout ─────────────────────── */
+@media (max-width: 640px) {
+    #stockTable thead { display: none; }
+    #stockTable, #stockTable tbody { display: block; }
+    #stockTable tbody { display: flex; flex-direction: column; gap: 10px; }
+
+    .stock-row {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        background: #fff;
+        border: 1.5px solid #efe9ee !important;
+        border-radius: 12px !important;
+        padding: 10px !important;
+        box-shadow: 0 1px 3px rgba(44,42,48,.06);
+    }
+    /* Color input spans full width */
+    .stock-row td:first-child {
+        grid-column: 1 / -1;
+        padding: 0 0 4px 0 !important;
+    }
+    .stock-row td:first-child input {
+        font-weight: 700;
+        font-size: 0.88rem !important;
+        background: #faf0f4;
+    }
+    /* Delete button — bottom right */
+    .stock-row td:last-child {
+        grid-column: 1 / -1;
+        text-align: right;
+        padding: 4px 0 0 0 !important;
+    }
+    /* Each size cell — show label above input */
+    .stock-row td[data-label]:not(:first-child):not(:last-child) {
+        display: flex !important;
+        flex-direction: column;
+        align-items: center;
+        padding: 0 !important;
+        gap: 3px;
+    }
+    .stock-row td[data-label]:not(:first-child):not(:last-child)::before {
+        content: attr(data-label);
+        font-size: 0.6rem;
+        font-weight: 700;
+        color: #c05a78;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .stock-row td[data-label]:not(:first-child):not(:last-child) input {
+        width: 100%;
+        text-align: center;
+        padding: 7px 4px !important;
+        font-size: 0.9rem !important;
+        border-radius: 8px !important;
+    }
+}
 </style>
 
 <?php
@@ -587,14 +644,14 @@ function addColorRow() {
     const color  = suggest;
     const baseSku = document.getElementById('skuInput')?.value || '';
     let html = `<tr class="stock-row" style="border-bottom:1px solid #f5f0f5;">
-        <td style="padding:6px 8px;">
+        <td data-label="สี" style="padding:6px 8px;">
             <input type="text" class="form-control form-control-sm color-input" list="colorList"
                    placeholder="สี..." value="${color}"
                    oninput="updateStockNames(this);updateVariantSKUs()"
                    style="border-radius:7px;font-size:0.82rem;">
         </td>`;
     SIZES.forEach(sz => {
-        html += `<td style="padding:5px 4px;text-align:center;">
+        html += `<td data-label="${sz}" style="padding:5px 4px;text-align:center;">
             <input type="number" name="stock[${sz}][${color}][qty]"
                    class="form-control form-control-sm stock-qty text-center"
                    placeholder="—" min="0" style="font-size:0.85rem;border-radius:7px;padding:5px 4px;">
