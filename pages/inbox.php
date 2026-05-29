@@ -187,14 +187,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         $prods = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if ($prods) {
             $ids = implode(',', array_map('intval', array_column($prods,'id')));
+
+            // ดึงสต็อกดิบ
             $stockRows = $pdo->query("
-                SELECT product_id,size,color,quantity,min_alert
+                SELECT product_id, size, color, quantity, min_alert
                 FROM stock WHERE product_id IN ($ids)
                 ORDER BY product_id,
                   FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
             ")->fetchAll(PDO::FETCH_ASSOC);
+
+            // คำนวณ committed stock — ดูว่าสินค้านี้ถูกใช้ในเซตไหนบ้าง
+            // committed = SUM(bi.quantity) ต่อ 1 เซต × จำนวนเซตที่ยัง active
+            // ง่ายๆ: นับจาก bundle_items ว่าสินค้านี้ถูก lock ไปกี่ชิ้นรวมกัน
+            $committedMap = []; // [product_id][size][color] => committed_qty
+            $bundleStmt = $pdo->query("
+                SELECT bi.product_id, bi.size, bi.color,
+                       SUM(bi.quantity) AS committed
+                FROM bundle_items bi
+                JOIN products bp ON bp.id = bi.bundle_id AND bp.status = 'active'
+                WHERE bi.product_id IN ($ids)
+                GROUP BY bi.product_id, bi.size, bi.color
+            ");
+            foreach ($bundleStmt->fetchAll(PDO::FETCH_ASSOC) as $b) {
+                $committedMap[$b['product_id']][$b['size']][$b['color']] = (int)$b['committed'];
+            }
+
             $stockMap = [];
-            foreach ($stockRows as $sr) { $stockMap[$sr['product_id']][] = $sr; }
+            foreach ($stockRows as $sr) {
+                $committed   = $committedMap[$sr['product_id']][$sr['size']][$sr['color']] ?? 0;
+                $sr['quantity_raw']       = (int)$sr['quantity'];
+                $sr['quantity_committed'] = $committed;
+                $sr['quantity_available'] = max(0, (int)$sr['quantity'] - $committed);
+                $stockMap[$sr['product_id']][] = $sr;
+            }
+
             foreach ($prods as &$p) {
                 $p['image_url'] = $p['main_image'] ? (UPLOAD_URL . 'products/' . $p['main_image']) : '';
                 $p['stocks']    = $stockMap[$p['id']] ?? [];
@@ -2025,8 +2051,8 @@ function renderProduct(p) {
     const price     = parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0});
     const insertText = `🛍️ ${p.name}\n💰 ราคา ฿${price}`;
 
-    // Size picker buttons (only sizes with stock > 0 = available as individual item)
-    const availSizes = (p.stocks||[]).filter(s => parseInt(s.quantity) > 0);
+    // Size picker — ใช้ quantity_available (หักสต็อกที่ถูกจองในเซตแล้ว)
+    const availSizes = (p.stocks||[]).filter(s => parseInt(s.quantity_available ?? s.quantity) > 0);
     const sizePicker = availSizes.map(s => {
         const msg = `🛍️ ${p.name}\n💰 ราคา ฿${price}\n📦 ไซส์ ${s.size} ✅ ยังมีสินค้า`;
         return `<button class="btn-insert" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"
