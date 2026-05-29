@@ -247,6 +247,53 @@ foreach ($stocks as $s) {
     elseif ($qty <= $min)    $productGroups[$pid]['has_low'] = true;
 }
 
+// ── Bundle virtual stock ──────────────────────────────────────────────────────
+$bundleRows = $pdo->query("
+    SELECT p.id, p.name, p.sku, p.main_image,
+           cat.name AS cat_name, cat.icon AS cat_icon,
+           MIN(FLOOR(COALESCE(s.quantity, 0) / bi.quantity)) AS virtual_sets
+    FROM products p
+    JOIN bundle_items bi ON bi.bundle_id = p.id
+    LEFT JOIN stock s ON s.product_id = bi.product_id
+        AND (bi.size = '' OR s.size = bi.size)
+        AND (bi.color = '' OR s.color = bi.color)
+    LEFT JOIN categories cat ON cat.id = p.category_id
+    WHERE p.product_type = 'bundle' AND p.status != 'inactive'
+    GROUP BY p.id ORDER BY p.name
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$bundleComponents = [];
+if ($bundleRows) {
+    $bids = implode(',', array_map(fn($b) => (int)$b['id'], $bundleRows));
+    $compRows = $pdo->query("
+        SELECT bi.bundle_id, bi.product_id, bi.size, bi.color, bi.quantity AS qty_per_set,
+               p.name AS comp_name,
+               COALESCE(s.quantity, 0) AS stock_qty
+        FROM bundle_items bi
+        JOIN products p ON p.id = bi.product_id
+        LEFT JOIN stock s ON s.product_id = bi.product_id
+            AND (bi.size = '' OR s.size = bi.size)
+            AND (bi.color = '' OR s.color = bi.color)
+        WHERE bi.bundle_id IN ($bids)
+        ORDER BY bi.bundle_id, p.name
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($compRows as $c) {
+        $bundleComponents[(int)$c['bundle_id']][] = $c;
+    }
+}
+// apply same filters
+if ($search) {
+    $bundleRows = array_filter($bundleRows, fn($b) => mb_stripos($b['name'], $search) !== false || mb_stripos($b['sku'] ?? '', $search) !== false);
+}
+if ($productFilter) {
+    $bundleRows = array_filter($bundleRows, fn($b) => $b['id'] == $productFilter);
+}
+if ($filter === 'out') {
+    $bundleRows = array_filter($bundleRows, fn($b) => (int)$b['virtual_sets'] === 0);
+} elseif ($filter === 'low') {
+    $bundleRows = array_filter($bundleRows, fn($b) => (int)$b['virtual_sets'] > 0 && (int)$b['virtual_sets'] <= 2);
+}
+
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
@@ -853,6 +900,65 @@ require_once __DIR__ . '/../includes/header.php';
         </div><!-- .prow-body -->
     </div><!-- .prow -->
     <?php endforeach; ?>
+
+    <?php foreach ($bundleRows as $bundle):
+        $sets    = (int)$bundle['virtual_sets'];
+        $cls     = $sets === 0 ? 'out' : ($sets <= 2 ? 'warn' : 'ok');
+        $icon    = $sets === 0 ? '❌' : ($sets <= 2 ? '⚠️' : '✅');
+        $comps   = $bundleComponents[(int)$bundle['id']] ?? [];
+        $autoOpen = ($productFilter == $bundle['id']) || ($filter !== '' && $sets <= 2);
+    ?>
+    <div class="prow <?= $autoOpen ? 'open' : '' ?>" id="prow-b<?= $bundle['id'] ?>">
+        <div class="prow-header" onclick="this.closest('.prow').classList.toggle('open')">
+            <?php if ($bundle['main_image']): ?>
+            <img src="<?= UPLOAD_URL ?>products/<?= htmlspecialchars($bundle['main_image']) ?>" alt=""
+                 style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1px solid #efe9ee;">
+            <?php else: ?>
+            <div style="width:44px;height:44px;border-radius:8px;background:var(--lavender);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem;"><?= $bundle['cat_icon'] ?? '🎁' ?></div>
+            <?php endif; ?>
+            <div style="flex:1;min-width:0;">
+                <div class="prow-name"><?= htmlspecialchars($bundle['name']) ?></div>
+                <div class="prow-meta">
+                    🎁 เซต · <?= count($comps) ?> ชนิดสินค้า
+                </div>
+            </div>
+            <?php if ($bundle['sku']): ?>
+            <span class="prow-sku"><?= htmlspecialchars($bundle['sku']) ?></span>
+            <?php endif; ?>
+            <span class="prow-qty <?= $cls ?>"><?= $icon ?> <?= $sets ?> เซต</span>
+            <span style="font-size:.65rem;background:#f0e7ff;color:#7c3aed;padding:2px 7px;border-radius:8px;font-weight:600;margin-right:4px;">virtual</span>
+            <i class="fas fa-chevron-down prow-chevron"></i>
+        </div>
+        <div class="prow-body">
+            <div style="padding:14px 18px;">
+                <div style="font-size:.78rem;color:#888;font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;">ส่วนประกอบ</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                <?php foreach ($comps as $c):
+                    $enough = $c['stock_qty'] >= $c['qty_per_set'];
+                    $bg  = $c['stock_qty'] === 0 ? '#fef2f2' : (!$enough ? '#fffbeb' : '#f0fdf4');
+                    $bdr = $c['stock_qty'] === 0 ? '#fca5a5' : (!$enough ? '#fde68a' : '#bbf7d0');
+                    $tc  = $c['stock_qty'] === 0 ? '#dc2626' : (!$enough ? '#b45309' : '#15803d');
+                ?>
+                <div style="background:<?= $bg ?>;border:1.5px solid <?= $bdr ?>;border-radius:10px;padding:8px 12px;font-size:.78rem;min-width:140px;">
+                    <div style="font-weight:600;color:#333;margin-bottom:3px;"><?= htmlspecialchars($c['comp_name']) ?></div>
+                    <?php if ($c['size']): ?><div style="color:#888;font-size:.7rem;">ไซส์: <?= htmlspecialchars($c['size']) ?></div><?php endif; ?>
+                    <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                        <span style="color:<?= $tc ?>;font-weight:700;">คงเหลือ <?= $c['stock_qty'] ?></span>
+                        <span style="color:#888;">/ เซตละ <?= $c['qty_per_set'] ?></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="prow-footer">
+                <a href="<?= SITE_URL ?>/pages/product-add.php?edit=<?= $bundle['id'] ?>" class="btn btn-outline-secondary btn-sm" style="font-size:.78rem;">
+                    <i class="fas fa-pen me-1"></i> แก้ไขสินค้า
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+
     </div>
 
     <?php endif; ?>
