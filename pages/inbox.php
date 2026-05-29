@@ -196,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             $stockMap = [];
             foreach ($stockRows as $sr) { $stockMap[$sr['product_id']][] = $sr; }
             foreach ($prods as &$p) {
-                $p['image_url'] = $p['main_image'] ? (UPLOAD_URL . $p['main_image']) : '';
+                $p['image_url'] = $p['main_image'] ? (UPLOAD_URL . 'products/' . $p['main_image']) : '';
                 $p['stocks']    = $stockMap[$p['id']] ?? [];
             }
         }
@@ -2037,12 +2037,15 @@ function renderProduct(p) {
                 ${badges ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;">${badges}</div>` : '<div style="font-size:0.65rem;color:#ccc;margin-bottom:6px;">ไม่มีข้อมูลสต็อก</div>'}
             </div>
         </div>
-        <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
-            <button class="btn-insert" onclick="insertToReply(${JSON.stringify(insertText)})">
+        <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
+            <button class="btn-insert" onclick="sendProductInfo(${JSON.stringify(insertText)})">
                 <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
             </button>
-            <button class="btn-insert" onclick="insertToReply(${JSON.stringify(insertStock)})">
+            <button class="btn-insert" onclick="sendProductInfo(${JSON.stringify(insertStock)})">
                 <i class="fas fa-boxes" style="font-size:.6rem;"></i> ส่งสต็อก
+            </button>
+            <button class="btn-insert" style="background:#f0f8ff;color:#2563eb;border-color:#bfdbfe;" onclick="insertToReply(${JSON.stringify(insertText)})">
+                <i class="fas fa-pen" style="font-size:.6rem;"></i> แก้ก่อนส่ง
             </button>
         </div>
     </div>`;
@@ -2136,14 +2139,32 @@ function loadLowStock() {
 
 /* ── Insert text into reply box ───────────────────────────────── */
 function insertToReply(text) {
+    if (!CONV_ID_CURRENT) {
+        alert('กรุณาเลือกบทสนทนาก่อน');
+        return;
+    }
+    // Show chat reply if hidden
+    const chatReply = document.getElementById('chatReply');
+    if (chatReply) chatReply.style.display = 'block';
+
     const ta = document.getElementById('replyText');
-    if (!ta) { alert('เลือกบทสนทนาก่อนเพื่อส่งข้อความ'); return; }
-    ta.value = ta.value ? ta.value + '\n' + text : text;
+    if (!ta) return;
+    ta.value = text;
     ta.focus();
     autoResize(ta);
-    // scroll chat to bottom
     const msgs = document.getElementById('chatMessages');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
+}
+
+/* ── Send product info directly ────────────────────────────────── */
+function sendProductInfo(text) {
+    if (!CONV_ID_CURRENT) { alert('กรุณาเลือกบทสนทนาก่อน'); return; }
+    const chatReply = document.getElementById('chatReply');
+    if (chatReply) chatReply.style.display = 'block';
+    const ta = document.getElementById('replyText');
+    if (ta) { ta.value = text; autoResize(ta); ta.focus(); }
+    // Auto-send
+    sendReply();
 }
 </script>
 
