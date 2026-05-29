@@ -10,15 +10,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 
     $pdo->prepare("UPDATE orders SET order_status=?, tracking_number=COALESCE(NULLIF(?,''), tracking_number), updated_at=NOW() WHERE id=?")->execute([$newStatus, $tracking, $orderId]);
 
-    // If shipped/delivered, deduct stock
+    // If shipped/delivered, deduct stock (only if not already deducted at creation)
     if (in_array($newStatus, ['shipped', 'delivered'])) {
-        $stmt = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
-        $stmt->execute([$orderId]);
-        $items = $stmt->fetchAll();
-        foreach ($items as $item) {
-            if ($item['product_id']) {
-                $pdo->prepare("UPDATE stock SET quantity = GREATEST(0, quantity - ?) WHERE product_id=? AND size=?")->execute([$item['quantity'], $item['product_id'], $item['size']]);
+        $alreadyRow = $pdo->prepare("SELECT stock_deducted FROM orders WHERE id=?");
+        $alreadyRow->execute([$orderId]);
+        if (!(int)$alreadyRow->fetchColumn()) {
+            $stmt = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
+            $stmt->execute([$orderId]);
+            $items = $stmt->fetchAll();
+            foreach ($items as $item) {
+                if ($item['product_id']) {
+                    $pdo->prepare("UPDATE stock SET quantity = GREATEST(0, quantity - ?) WHERE product_id=? AND size=?")->execute([$item['quantity'], $item['product_id'], $item['size']]);
+                }
             }
+            $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$orderId]);
         }
     }
 

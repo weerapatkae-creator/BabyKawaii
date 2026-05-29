@@ -363,6 +363,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             ")->execute([$orderId,$pid?:null,$pname,$size,$qty,$price,$price*$qty]);
         }
 
+        // หักสต็อกทันทีเมื่อสร้างออเดอร์
+        foreach ($items as $item) {
+            $pid  = (int)($item['product_id'] ?? 0);
+            $size = trim($item['size'] ?? '');
+            $qty  = max(1,(int)($item['qty'] ?? 1));
+            if (!$pid) continue;
+
+            $ptypeRow = $pdo->prepare("SELECT product_type FROM products WHERE id=?");
+            $ptypeRow->execute([$pid]);
+            $ptype = $ptypeRow->fetchColumn() ?: 'single';
+
+            if ($ptype === 'bundle') {
+                // bundle → หักจาก components ตาม bundle_items
+                $comps = $pdo->prepare("SELECT product_id, size AS comp_size, quantity AS comp_qty FROM bundle_items WHERE bundle_id=?");
+                $comps->execute([$pid]);
+                foreach ($comps->fetchAll(PDO::FETCH_ASSOC) as $comp) {
+                    $pdo->prepare("UPDATE stock SET quantity = GREATEST(0, quantity - ?) WHERE product_id=? AND size=?")
+                        ->execute([$comp['comp_qty'] * $qty, $comp['product_id'], $comp['comp_size']]);
+                }
+            } else {
+                $pdo->prepare("UPDATE stock SET quantity = GREATEST(0, quantity - ?) WHERE product_id=? AND size=?")
+                    ->execute([$qty, $pid, $size]);
+            }
+        }
+        $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$orderId]);
+
         echo json_encode(['ok'=>true,'order_id'=>$orderId,'order_number'=>$orderNum,'total'=>$total],
                          JSON_UNESCAPED_UNICODE);
         exit;
