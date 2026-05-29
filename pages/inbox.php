@@ -952,29 +952,21 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
 
             <!-- Conversation quick actions -->
             <?php if ($activeConv): ?>
-            <div style="padding:10px 14px;border-bottom:1px solid #f0ebee;background:#fff;display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:0.72rem;color:#aaa;margin-bottom:3px;">สถานะสนทนา</div>
-                    <select id="toolsStatusSel" style="width:100%;border:1.5px solid #efe9ee;border-radius:8px;padding:5px 8px;font-size:0.78rem;font-family:inherit;background:#faf7f9;cursor:pointer;"
-                            onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
-                        <option value="open"   <?= in_array($activeConv['status'],['open','pending'])?'selected':'' ?>>🟢 กำลังคุย</option>
-                        <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
-                    </select>
-                </div>
-                <a href="<?= SITE_URL ?>/pages/orders.php?q=<?= urlencode($activeConv['customer_name'] ?? '') ?>"
-                   target="_blank" rel="noopener"
-                   style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;background:#f5f0f8;border-radius:8px;text-decoration:none;color:#8a6db0;font-size:0.65rem;font-weight:600;flex-shrink:0;white-space:nowrap;border:1.5px solid #ede5f5;">
-                    <i class="fas fa-box-open" style="font-size:0.9rem;"></i>
-                    ออเดอร์
-                </a>
+            <div style="padding:8px 14px;border-bottom:1px solid #f0ebee;background:#fff;flex-shrink:0;">
+                <select id="toolsStatusSel" style="width:100%;border:1.5px solid #efe9ee;border-radius:8px;padding:6px 10px;font-size:0.8rem;font-family:inherit;background:#faf7f9;cursor:pointer;"
+                        onchange="setStatus(<?= $activeConv['id'] ?>, this.value)">
+                    <option value="open"   <?= in_array($activeConv['status'],['open','pending'])?'selected':'' ?>>🟢 กำลังคุย</option>
+                    <option value="closed" <?= $activeConv['status']==='closed'?'selected':'' ?>>🔒 จบแล้ว</option>
+                </select>
             </div>
             <?php endif; ?>
 
             <!-- Tabs -->
             <div class="tools-tabs">
-                <div class="tools-tab active" onclick="switchToolsTab('products')" id="ttab-products">สินค้า</div>
-                <div class="tools-tab" onclick="switchToolsTab('orders')"   id="ttab-orders">สร้างออเดอร์</div>
-                <div class="tools-tab" onclick="switchToolsTab('lowstock')" id="ttab-lowstock">สต็อกต่ำ</div>
+                <div class="tools-tab active" onclick="switchToolsTab('products')"  id="ttab-products">สินค้า</div>
+                <div class="tools-tab"        onclick="switchToolsTab('orders')"    id="ttab-orders">สร้างออเดอร์</div>
+                <div class="tools-tab"        onclick="switchToolsTab('checkorder')" id="ttab-checkorder">เช็คออเดอร์</div>
+                <div class="tools-tab"        onclick="switchToolsTab('lowstock')"  id="ttab-lowstock">สต็อกต่ำ</div>
             </div>
 
             <!-- Tab: Products -->
@@ -993,15 +985,6 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
             <!-- Tab: Orders -->
             <div class="tools-pane" id="tpane-orders" style="display:none;">
 
-                <!-- Toggle buttons -->
-                <div style="display:flex;gap:6px;padding:10px 12px 0;flex-shrink:0;">
-                    <button class="order-mode-btn active" id="btnModeNew" onclick="setOrderMode('new')">
-                        <i class="fas fa-plus-circle"></i> สร้างออเดอร์
-                    </button>
-                    <button class="order-mode-btn" id="btnModeSearch" onclick="setOrderMode('search')">
-                        <i class="fas fa-search"></i> ค้นหา
-                    </button>
-                </div>
 
                 <!-- Mode: New Order -->
                 <div id="orderModeNew" style="overflow-y:auto;flex:1;padding:10px 12px;">
@@ -1039,25 +1022,26 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
                     <div id="orderSaveMsg" style="margin-top:6px;font-size:0.78rem;"></div>
                 </div>
 
-                <!-- Mode: Search Orders -->
-                <div id="orderModeSearch" style="display:none;flex:1;flex-direction:column;">
-                    <div class="tools-search-box">
-                        <input type="text" id="orderSearch"
-                               placeholder="🔍 ชื่อลูกค้า / เลขออเดอร์..."
-                               oninput="debounceOrderSearch(this.value)"
-                               autocomplete="off">
-                    </div>
-                    <div id="orderResults" style="overflow-y:auto;flex:1;padding:8px 0;">
-                        <div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>
-                    </div>
-                </div>
 
+            </div>
+
+            <!-- Tab: Check Orders -->
+            <div class="tools-pane" id="tpane-checkorder" style="display:none;">
+                <div class="tools-search-box">
+                    <input type="text" id="orderSearch"
+                           placeholder="🔍 ชื่อลูกค้า / เลขออเดอร์..."
+                           oninput="debounceOrderSearch(this.value)"
+                           autocomplete="off">
+                </div>
+                <div id="orderResults" style="overflow-y:auto;flex:1;padding:8px 0;">
+                    <div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>
+                </div>
             </div>
 
             <!-- Tab: Low Stock -->
             <div class="tools-pane" id="tpane-lowstock" style="display:none;">
                 <div id="lowStockResults">
-                    <div class="tools-hint">คลิกแท็บ ⚠️ เพื่อโหลด</div>
+                    <div class="tools-hint">กำลังโหลด...</div>
                 </div>
             </div>
 
@@ -1587,7 +1571,7 @@ function toggleTools() {
 /* ── Switch tabs ──────────────────────────────────────────────── */
 function switchToolsTab(tab) {
     _curTab = tab;
-    ['products','orders','lowstock'].forEach(t => {
+    ['products','orders','checkorder','lowstock'].forEach(t => {
         document.getElementById('ttab-' + t).classList.toggle('active', t === tab);
         document.getElementById('tpane-' + t).style.display = t === tab ? 'flex' : 'none';
     });
@@ -1597,10 +1581,18 @@ function switchToolsTab(tab) {
         setTimeout(() => inp && inp.focus(), 100);
     }
     if (tab === 'orders') {
-        // auto-fill customer name in form
         const oName = document.getElementById('oName');
         if (oName && !oName.value && ACTIVE_CUSTOMER) oName.value = ACTIVE_CUSTOMER;
         if (!document.getElementById('orderItems').children.length) addOrderItem();
+    }
+    if (tab === 'checkorder') {
+        const inp = document.getElementById('orderSearch');
+        if (inp && !inp.value && ACTIVE_CUSTOMER) {
+            inp.value = ACTIVE_CUSTOMER;
+            searchOrders(ACTIVE_CUSTOMER);
+        } else if (inp && inp.value) {
+            searchOrders(inp.value);
+        }
     }
     if (tab === 'lowstock' && !_lowLoaded) loadLowStock();
 }
