@@ -2038,10 +2038,10 @@ function renderProduct(p) {
             </div>
         </div>
         <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-            <button class="btn-insert" onclick="fillReply(${JSON.stringify(insertText)})">
+            <button class="btn-insert" data-msg="${esc(insertText)}" onclick="fillReply(this.dataset.msg)">
                 <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
             </button>
-            <button class="btn-insert" onclick="fillReply(${JSON.stringify(insertStock)})">
+            <button class="btn-insert" data-msg="${esc(insertStock)}" onclick="fillReply(this.dataset.msg)">
                 <i class="fas fa-boxes" style="font-size:.6rem;"></i> ส่งสต็อก
             </button>
         </div>
