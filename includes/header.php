@@ -43,14 +43,6 @@ $unreadMessages = $pdo->query("SELECT COALESCE(SUM(unread_count),0) FROM convers
         </a>
 
         <div class="ms-auto d-flex align-items-center gap-3">
-            <!-- Low stock alert -->
-            <?php if ($lowStockCount > 0): ?>
-            <a href="<?= SITE_URL ?>/pages/stock.php?filter=low" class="btn btn-sm btn-warning position-relative">
-                <i class="fas fa-box-open"></i>
-                <span class="badge bg-danger badge-pill ms-1"><?= $lowStockCount ?></span>
-                <span class="d-none d-md-inline ms-1">สต็อกใกล้หมด</span>
-            </a>
-            <?php endif; ?>
 
             <!-- Pending orders -->
             <?php if ($pendingOrders > 0): ?>
