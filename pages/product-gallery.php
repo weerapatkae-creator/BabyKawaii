@@ -46,6 +46,25 @@ function thumbPath(string $filename, string $thumbDir): string {
     return $thumbDir . pathinfo($filename, PATHINFO_FILENAME) . '.jpg';
 }
 
+// ── AJAX: bulk delete ────────────────────────────────────────────────────────
+if (isset($_POST['ajax_bulk_delete'])) {
+    header('Content-Type: application/json');
+    $names = json_decode($_POST['files'] ?? '[]', true);
+    $deleted = 0;
+    foreach ((array)$names as $name) {
+        $file = basename($name);
+        $path = $uploadDir . $file;
+        if ($file && file_exists($path) && is_file($path)) {
+            unlink($path);
+            $tp = thumbPath($file, $thumbDir);
+            if (file_exists($tp)) unlink($tp);
+            $deleted++;
+        }
+    }
+    echo json_encode(['ok'=>true,'deleted'=>$deleted]);
+    exit;
+}
+
 // ── AJAX: upload single file ─────────────────────────────────────────────────
 if (isset($_POST['ajax_upload'])) {
     header('Content-Type: application/json');
@@ -185,6 +204,34 @@ require_once __DIR__ . '/../includes/header.php';
     cursor: pointer; text-decoration: none; display: inline-block;
 }
 .gal-btn.del { background: rgba(220,38,38,.75); }
+
+/* ── Selection mode ─────────────────────────── */
+.gal-card.selected {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 3px rgba(124,58,237,.25);
+}
+.gal-card .gal-check {
+    position: absolute; top: 6px; left: 6px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(255,255,255,.85); border: 2px solid #ddd;
+    display: none; align-items: center; justify-content: center;
+    cursor: pointer; font-size: .75rem; z-index: 2;
+    transition: background .12s, border-color .12s;
+}
+.select-mode .gal-card .gal-check  { display: flex; }
+.select-mode .gal-card .gal-actions { display: none; }
+.gal-card.selected .gal-check {
+    background: #7c3aed; border-color: #7c3aed; color: #fff;
+}
+.select-mode .gal-card { cursor: pointer; }
+
+#selectBar {
+    position: sticky; bottom: 16px; z-index: 100;
+    background: #fff; border: 1.5px solid #7c3aed; border-radius: 14px;
+    padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 4px 20px rgba(124,58,237,.2);
+    display: none;
+}
 </style>
 
 <div class="container-fluid fade-in">
@@ -218,9 +265,9 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ── Search ─────────────────────────────────────────────────────────────── -->
-<div class="d-flex align-items-center gap-3 mb-3">
-    <form class="d-flex gap-2 flex-grow-1" style="max-width:320px;">
+<!-- ── Toolbar ────────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <form class="d-flex gap-2" style="flex:1;max-width:300px;">
         <input type="text" name="q" class="form-control form-control-sm"
                placeholder="🔍 ค้นหา..." value="<?= htmlspecialchars($search) ?>">
         <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="fas fa-search"></i></button>
@@ -228,21 +275,36 @@ require_once __DIR__ . '/../includes/header.php';
         <a href="?" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></a>
         <?php endif; ?>
     </form>
+    <button class="btn btn-sm btn-outline-secondary ms-auto" id="btnSelect" onclick="toggleSelectMode()">
+        <i class="fas fa-check-square me-1"></i> เลือก
+    </button>
+</div>
+
+<!-- Sticky select bar -->
+<div id="selectBar">
+    <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked)"
+           style="width:18px;height:18px;accent-color:#7c3aed;cursor:pointer;">
+    <span id="selectCount" style="font-size:.85rem;font-weight:600;color:#7c3aed;flex:1;">เลือก 0 รูป</span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="toggleSelectMode()">ยกเลิก</button>
+    <button class="btn btn-sm btn-danger" id="btnBulkDel" onclick="bulkDelete()" disabled>
+        <i class="fas fa-trash me-1"></i> ลบที่เลือก
+    </button>
 </div>
 
 <!-- ── Gallery ───────────────────────────────────────────────────────────── -->
 <div id="gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;">
 <?php foreach ($files as $f): ?>
-<div class="gal-card">
+<div class="gal-card" data-name="<?= htmlspecialchars($f['name']) ?>" onclick="onCardClick(this)">
+    <div class="gal-check">✓</div>
     <img src="<?= htmlspecialchars($f['thumb']) ?>" loading="lazy" alt="" decoding="async">
     <div class="gal-card-meta">
         <div class="fn"><?= htmlspecialchars($f['name']) ?></div>
         <div class="sz"><?= $fmtSize($f['size']) ?></div>
     </div>
     <div class="gal-actions">
-        <a href="<?= htmlspecialchars($uploadUrl.$f['name']) ?>" target="_blank" class="gal-btn">⛶</a>
+        <a href="<?= htmlspecialchars($uploadUrl.$f['name']) ?>" target="_blank" class="gal-btn" onclick="event.stopPropagation()">⛶</a>
         <a href="?delete=<?= urlencode($f['name']) ?>"
-           onclick="return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
+           onclick="event.stopPropagation();return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
     </div>
 </div>
 <?php endforeach; ?>
@@ -353,14 +415,15 @@ function addToGallery(filename, url, thumb) {
 
     const card = document.createElement('div');
     card.className = 'gal-card';
-    card.innerHTML = `<img src="${thumb||url}" loading="lazy" decoding="async">
-        <div class="gal-card-meta">
-            <div class="fn">${filename}</div>
-        </div>
+    card.dataset.name = filename;
+    card.setAttribute('onclick', 'onCardClick(this)');
+    card.innerHTML = `<div class="gal-check">✓</div>
+        <img src="${thumb||url}" loading="lazy" decoding="async">
+        <div class="gal-card-meta"><div class="fn">${filename}</div></div>
         <div class="gal-actions">
-            <a href="${url}" target="_blank" class="gal-btn">⛶</a>
+            <a href="${url}" target="_blank" class="gal-btn" onclick="event.stopPropagation()">⛶</a>
             <a href="?delete=${encodeURIComponent(filename)}"
-               onclick="return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
+               onclick="event.stopPropagation();return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
         </div>`;
     document.getElementById('gallery').prepend(card);
 }
@@ -375,6 +438,68 @@ function updateSummary() {
         const fail  = document.getElementById('queue').querySelectorAll('.error').length;
         s.textContent = `อัปโหลดเสร็จ ${ok} รูป` + (fail ? ` (ล้มเหลว ${fail})` : '');
         s.style.color = fail ? '#ef4444' : '#22c55e';
+    }
+}
+
+// ── Select mode ──────────────────────────────────────────────────────────────
+let _selectMode = false;
+
+function toggleSelectMode() {
+    _selectMode = !_selectMode;
+    document.getElementById('gallery').classList.toggle('select-mode', _selectMode);
+    document.getElementById('selectBar').style.display = _selectMode ? 'flex' : 'none';
+    document.getElementById('btnSelect').classList.toggle('btn-outline-secondary', !_selectMode);
+    document.getElementById('btnSelect').classList.toggle('btn-secondary', _selectMode);
+    if (!_selectMode) {
+        document.querySelectorAll('.gal-card.selected').forEach(c => c.classList.remove('selected'));
+        updateSelectCount();
+    }
+}
+
+function onCardClick(card) {
+    if (!_selectMode) return;
+    card.classList.toggle('selected');
+    updateSelectCount();
+    document.getElementById('chkAll').checked =
+        document.querySelectorAll('.gal-card').length ===
+        document.querySelectorAll('.gal-card.selected').length;
+}
+
+function toggleSelectAll(checked) {
+    document.querySelectorAll('.gal-card').forEach(c => c.classList.toggle('selected', checked));
+    updateSelectCount();
+}
+
+function updateSelectCount() {
+    const n = document.querySelectorAll('.gal-card.selected').length;
+    document.getElementById('selectCount').textContent = `เลือก ${n} รูป`;
+    document.getElementById('btnBulkDel').disabled = n === 0;
+}
+
+async function bulkDelete() {
+    const cards = [...document.querySelectorAll('.gal-card.selected')];
+    if (!cards.length) return;
+    if (!confirm(`ลบ ${cards.length} รูปที่เลือก?`)) return;
+
+    const files = cards.map(c => c.dataset.name);
+    const fd = new FormData();
+    fd.append('ajax_bulk_delete', '1');
+    fd.append('files', JSON.stringify(files));
+
+    const btn = document.getElementById('btnBulkDel');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    const res  = await fetch(UPLOAD_URL, { method:'POST', body: fd });
+    const data = await res.json();
+
+    if (data.ok) {
+        cards.forEach(c => c.remove());
+        _currentCount -= data.deleted;
+        document.getElementById('totalCount').textContent = _currentCount + ' รูป';
+        document.getElementById('chkAll').checked = false;
+        updateSelectCount();
+        toggleSelectMode();
     }
 }
 
@@ -393,15 +518,18 @@ async function loadMore() {
     data.items.forEach(item => {
         const card = document.createElement('div');
         card.className = 'gal-card';
-        card.innerHTML = `<img src="${item.thumb||item.url}" loading="lazy" decoding="async" alt="">
+        card.dataset.name = item.name;
+        card.setAttribute('onclick','onCardClick(this)');
+        card.innerHTML = `<div class="gal-check">✓</div>
+            <img src="${item.thumb||item.url}" loading="lazy" decoding="async" alt="">
             <div class="gal-card-meta">
                 <div class="fn">${item.name}</div>
                 <div class="sz">${item.size}</div>
             </div>
             <div class="gal-actions">
-                <a href="${item.url}" target="_blank" class="gal-btn">⛶</a>
+                <a href="${item.url}" target="_blank" class="gal-btn" onclick="event.stopPropagation()">⛶</a>
                 <a href="?delete=${encodeURIComponent(item.name)}"
-                   onclick="return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
+                   onclick="event.stopPropagation();return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
             </div>`;
         document.getElementById('gallery').appendChild(card);
     });
