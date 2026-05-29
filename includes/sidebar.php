@@ -2,8 +2,9 @@
 $navGeneral = [
     ['url' => SITE_URL . '/dashboard.php',         'icon' => 'fa-chart-pie',      'label' => 'Dashboard',           'page' => 'dashboard'],
     ['url' => SITE_URL . '/pages/products.php',    'icon' => 'fa-tshirt',         'label' => 'สินค้าทั้งหมด',       'page' => 'products'],
-    ['url' => SITE_URL . '/pages/product-add.php', 'icon' => 'fa-plus-circle',    'label' => 'เพิ่มสินค้าใหม่',     'page' => 'product-add'],
-    ['url' => SITE_URL . '/pages/stock.php',       'icon' => 'fa-boxes-stacked',  'label' => 'จัดการสต็อก',        'page' => 'stock'],
+    ['url' => SITE_URL . '/pages/product-add.php',     'icon' => 'fa-plus-circle',    'label' => 'เพิ่มสินค้าใหม่',     'page' => 'product-add'],
+    ['url' => SITE_URL . '/pages/product-gallery.php', 'icon' => 'fa-images',         'label' => 'คลังรูปสินค้า',       'page' => 'product-gallery'],
+    ['url' => SITE_URL . '/pages/stock.php',           'icon' => 'fa-boxes-stacked',  'label' => 'จัดการสต็อก',        'page' => 'stock'],
     ['url' => SITE_URL . '/pages/orders.php',      'icon' => 'fa-shopping-bag',   'label' => 'ออเดอร์ / คำสั่งซื้อ','page' => 'orders'],
     ['url' => SITE_URL . '/pages/customers.php',   'icon' => 'fa-users',          'label' => 'ฐานข้อมูลลูกค้า',    'page' => 'customers'],
     ['url' => SITE_URL . '/pages/inbox.php',        'icon' => 'fa-comment-dots',   'label' => 'Inbox ข้อความ',       'page' => 'inbox'],

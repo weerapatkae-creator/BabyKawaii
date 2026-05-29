@@ -3,28 +3,30 @@ require_once __DIR__ . '/../config/database.php';
 requireLogin();
 $pdo = getDB();
 
-// ── AJAX: media library list ─────────────────────────────────────────────────
+// ── AJAX: product image library list (from uploads/products/) ────────────────
 if (isset($_GET['get_media_list'])) {
     header('Content-Type: application/json');
     $q    = trim($_GET['q'] ?? '');
     $page = max(1, (int)($_GET['page'] ?? 1));
     $per  = 40;
-    $offset = ($page - 1) * $per;
-    $where = ["file_type = 'image'"];
-    $params = [];
-    if ($q) { $where[] = "(title LIKE ? OR tags LIKE ? OR original_name LIKE ?)"; $params = array_fill(0, 3, "%$q%"); }
-    $sql = "SELECT id, filename, title, original_name FROM media WHERE " . implode(' AND ', $where) . " ORDER BY created_at DESC LIMIT $per OFFSET $offset";
-    $rows = $pdo->prepare($sql);
-    $rows->execute($params);
-    $items = array_map(fn($r) => [
-        'id'       => $r['id'],
-        'filename' => $r['filename'],
-        'title'    => $r['title'] ?: $r['original_name'],
-        'url'      => UPLOAD_URL . 'media/' . $r['filename'],
-    ], $rows->fetchAll(PDO::FETCH_ASSOC));
-    $total = $pdo->prepare("SELECT COUNT(*) FROM media WHERE " . implode(' AND ', $where));
-    $total->execute($params);
-    echo json_encode(['items' => $items, 'total' => (int)$total->fetchColumn(), 'page' => $page, 'per' => $per], JSON_UNESCAPED_UNICODE);
+
+    $all = [];
+    foreach (glob(UPLOAD_PATH . 'products/*.{jpg,jpeg,png,webp,gif}', GLOB_BRACE) as $path) {
+        $base = basename($path);
+        if ($q && stripos($base, $q) === false) continue;
+        $all[] = ['filename' => $base, 'mtime' => filemtime($path)];
+    }
+    usort($all, fn($a,$b) => $b['mtime'] - $a['mtime']);
+
+    $total = count($all);
+    $slice = array_slice($all, ($page - 1) * $per, $per);
+    $items = array_map(fn($f) => [
+        'filename' => $f['filename'],
+        'title'    => $f['filename'],
+        'url'      => UPLOAD_URL . 'products/' . $f['filename'],
+    ], $slice);
+
+    echo json_encode(['items' => $items, 'total' => $total, 'page' => $page, 'per' => $per], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -586,8 +588,8 @@ $currentType = $product['product_type'] ?? 'single';
                 <div id="mpEmpty" style="display:none;text-align:center;padding:48px 16px;color:#bbb;">
                     <div style="font-size:2.5rem;">🖼️</div>
                     <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
-                    <a href="<?= SITE_URL ?>/pages/media.php" target="_blank" class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
-                        ไปอัปโหลดรูป <i class="fas fa-external-link-alt ms-1"></i>
+                    <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank" class="btn btn-sm btn-outline-secondary mt-3" style="font-size:.78rem;">
+                        ไปคลังรูปสินค้า <i class="fas fa-external-link-alt ms-1"></i>
                     </a>
                 </div>
                 <div id="mpLoading" style="text-align:center;padding:48px;color:#bbb;">
