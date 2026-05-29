@@ -9,7 +9,9 @@ $uploadUrl = UPLOAD_URL  . 'products/';
 $thumbUrl  = UPLOAD_URL  . 'products/thumbs/';
 $allowed   = ['jpg','jpeg','png','webp','gif'];
 
-// ── Thumbnail generator (300×300 crop center) ─────────────────────────────────
+// ── Image resizer ──────────────────────────────────────────────────────────────
+// $size=300 → thumbnail 300×300 crop-center
+// $size=1000 → resize max-side 1000px (maintain aspect ratio)
 function makeThumb(string $src, string $dest, int $size = 300): bool {
     $info = @getimagesize($src);
     if (!$info) return false;
@@ -23,22 +25,29 @@ function makeThumb(string $src, string $dest, int $size = 300): bool {
     };
     if (!$img) return false;
 
-    // crop square from center
-    $side = min($w, $h);
-    $x    = (int)(($w - $side) / 2);
-    $y    = (int)(($h - $side) / 2);
-    $thumb = imagecreatetruecolor($size, $size);
-    // preserve transparency for PNG/GIF
-    if (in_array($type, [IMAGETYPE_PNG, IMAGETYPE_GIF])) {
-        imagealphablending($thumb, false);
-        imagesavealpha($thumb, true);
-        $trans = imagecolorallocatealpha($thumb, 255, 255, 255, 127);
-        imagefill($thumb, 0, 0, $trans);
+    if ($size === 300) {
+        // crop square from center for gallery thumbnails
+        $side  = min($w, $h);
+        $x     = (int)(($w - $side) / 2);
+        $y     = (int)(($h - $side) / 2);
+        $out   = imagecreatetruecolor($size, $size);
+        imagecopyresampled($out, $img, 0, 0, $x, $y, $size, $size, $side, $side);
+    } else {
+        // maintain aspect ratio, shrink only if larger than $size
+        if ($w <= $size && $h <= $size) {
+            $nw = $w; $nh = $h;
+        } else {
+            $ratio = min($size/$w, $size/$h);
+            $nw = max(1, (int)($w * $ratio));
+            $nh = max(1, (int)($h * $ratio));
+        }
+        $out = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($out, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
     }
-    imagecopyresampled($thumb, $img, 0, 0, $x, $y, $size, $size, $side, $side);
-    $ok = imagejpeg($thumb, $dest, 82);
+
+    $ok = imagejpeg($out, $dest, 85);
     imagedestroy($img);
-    imagedestroy($thumb);
+    imagedestroy($out);
     return $ok;
 }
 
@@ -78,11 +87,15 @@ if (isset($_POST['ajax_upload'])) {
         echo json_encode(['ok'=>false,'msg'=>'ไฟล์ไม่รองรับ']);
         exit;
     }
-    $filename = 'product_' . time() . '_' . uniqid() . '.' . $ext;
+    // บันทึกเป็น .jpg เสมอ (ลดขนาดไฟล์)
+    $filename = 'product_' . time() . '_' . uniqid() . '.jpg';
     $dest     = $uploadDir . $filename;
     if (move_uploaded_file($f['tmp_name'], $dest)) {
+        // resize ทับไฟล์ต้นฉบับให้ max 1000px (ลบต้นฉบับใหญ่ทิ้ง)
+        makeThumb($dest, $dest, 1000);  // ทับตัวเอง
+        // สร้าง thumbnail 300px
         $tPath = thumbPath($filename, $thumbDir);
-        makeThumb($dest, $tPath);
+        makeThumb($dest, $tPath, 300);
         $tUrl = file_exists($tPath) ? ($thumbUrl . basename($tPath)) : ($uploadUrl . $filename);
         echo json_encode(['ok'=>true,'filename'=>$filename,'url'=>$uploadUrl.$filename,'thumb'=>$tUrl]);
     } else {

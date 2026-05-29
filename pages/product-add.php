@@ -1174,11 +1174,20 @@ async function mpLoad(page) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'mp-item';
-        btn.innerHTML = `<img src="${item.url}" alt="" style="pointer-events:none;">
+        btn.dataset.filename = item.filename;
+        btn.dataset.url      = item.url;
+        btn.innerHTML = `<img src="${item.url}" alt="" style="pointer-events:none;width:100%;height:100%;object-fit:cover;display:block;">
             <div class="mp-item-title" style="pointer-events:none;">${item.title}</div>`;
-        btn.addEventListener('click', () => selectMediaImage(item.filename, item.url));
         grid.appendChild(btn);
     });
+    // event delegation — ใช้ grid เป็น listener เดียว แทน per-item
+    if (!grid._hasListener) {
+        grid.addEventListener('click', e => {
+            const btn = e.target.closest('.mp-item');
+            if (btn) selectMediaImage(btn.dataset.filename, btn.dataset.url);
+        });
+        grid._hasListener = true;
+    }
     mpPage = page;
     const loaded = grid.children.length;
     if (loaded < data.total) {
