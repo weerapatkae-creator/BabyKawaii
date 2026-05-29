@@ -2025,13 +2025,13 @@ function renderProduct(p) {
     const price     = parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0});
     const insertText = `🛍️ ${p.name}\n💰 ราคา ฿${price}`;
 
-    // Size picker buttons (only sizes with stock > 0)
+    // Size picker buttons (only sizes with stock > 0 = available as individual item)
     const availSizes = (p.stocks||[]).filter(s => parseInt(s.quantity) > 0);
     const sizePicker = availSizes.map(s => {
-        const msg = `🛍️ ${p.name}\n💰 ราคา ฿${price}\n📦 ไซส์ ${s.size} เหลือ ${s.quantity} ชิ้น`;
+        const msg = `🛍️ ${p.name}\n💰 ราคา ฿${price}\n📦 ไซส์ ${s.size} ✅ ยังมีสินค้า`;
         return `<button class="btn-insert" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"
             data-msg="${escAttr(msg)}" onclick="fillReply(this.dataset.msg)">
-            ${esc(s.size)} (${s.quantity})
+            ${esc(s.size)}
         </button>`;
     }).join('');
 
@@ -2053,9 +2053,11 @@ function renderProduct(p) {
                 <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
             </button>
             ${availSizes.length ? `
-            <div style="font-size:0.62rem;color:#aaa;font-weight:600;letter-spacing:.04em;">เลือกไซส์ที่จะส่ง</div>
+            <div style="font-size:0.62rem;color:#aaa;font-weight:600;letter-spacing:.04em;margin-bottom:2px;">เลือกไซส์ที่จะแจ้งลูกค้า</div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;">${sizePicker}</div>
-            ` : '<div style="font-size:0.68rem;color:#ccc;">ไม่มีสต็อก</div>'}
+            ` : `<button class="btn-insert" style="background:#fff3f3;color:#c0392b;border-color:#f5c6cb;" disabled>
+                สินค้าหมด / จัดเป็นเซตแล้ว
+            </button>`}
         </div>
     </div>`;
 }
