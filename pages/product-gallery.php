@@ -333,26 +333,39 @@ let _done = 0, _total = 0, _currentCount = <?= $totalFiles ?>;
 let _galPage = 1, _galTotal = <?= $totalFiles ?>, _galPer = <?= $PER ?>, _loading = false;
 
 const MAX_FILES    = 50;
-const BATCH_SIZE   = 10;
-const MAX_PX       = 1200;
-const JPEG_QUALITY = 0.82;
+const MAX_PX       = 1000; // ลดจาก 1200 → 1000 ประหยัด memory
+const JPEG_QUALITY = 0.80;
 
-// resize ทีละ 1 รูป (sequential เพื่อไม่กิน memory mobile)
-function resizeImage(file) {
+// resize + upload ทีละ 1 รูป เพื่อใช้ memory คงที่ ไม่ว่าจะ 5 หรือ 50 รูป
+function resizeAndUpload(file, idx, total, sumEl) {
     return new Promise(resolve => {
+        sumEl.textContent = `ปรับขนาด ${idx}/${total}...`;
+
+        // สร้าง progress item (ไม่โหลดรูปเป็น preview เพื่อประหยัด memory)
+        const el = document.createElement('div');
+        el.className = 'pg-item';
+        el.innerHTML = `<div style="width:100%;height:70px;background:#ede5f5;display:flex;align-items:center;justify-content:center;font-size:1.2rem;">📷</div>
+            <div class="pg-bar-wrap"><div class="pg-bar"></div></div>
+            <div class="pg-status">↻</div>`;
+        document.getElementById('queue').appendChild(el);
+
+        const setStatus = t => { const s = el.querySelector('.pg-status'); if(s) s.textContent = t; };
+        const setBar    = p => { const b = el.querySelector('.pg-bar');    if(b) b.style.width = p+'%'; };
+
         try {
-            const img = new Image();
-            const url = URL.createObjectURL(file);
+            const imgEl = new Image();
+            const objUrl = URL.createObjectURL(file);
 
-            const cleanup = () => { try { URL.revokeObjectURL(url); } catch(e){} };
+            imgEl.onerror = () => {
+                URL.revokeObjectURL(objUrl);
+                // fallback: upload original ถ้า decode ไม่ได้
+                doUpload(file, file.name);
+            };
 
-            img.onerror = () => { cleanup(); resolve(file); };
-
-            img.onload = () => {
+            imgEl.onload = () => {
                 try {
-                    let w = img.naturalWidth  || img.width;
-                    let h = img.naturalHeight || img.height;
-                    if (!w || !h) { cleanup(); resolve(file); return; }
+                    let w = imgEl.naturalWidth  || imgEl.width  || 0;
+                    let h = imgEl.naturalHeight || imgEl.height || 0;
 
                     if (w > MAX_PX || h > MAX_PX) {
                         const r = Math.min(MAX_PX/w, MAX_PX/h);
@@ -360,24 +373,67 @@ function resizeImage(file) {
                         h = Math.round(h * r);
                     }
 
-                    const canvas = document.createElement('canvas');
-                    canvas.width  = w;
-                    canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, w, h);
-                    cleanup(); // revoke หลัง draw แล้ว
+                    const c = document.createElement('canvas');
+                    c.width = w || 1; c.height = h || 1;
+                    c.getContext('2d').drawImage(imgEl, 0, 0, c.width, c.height);
 
-                    canvas.toBlob(blob => {
-                        canvas.width = canvas.height = 0; // free memory
-                        if (blob) resolve(blob);
-                        else      resolve(file);          // fallback ไฟล์ต้นฉบับ
+                    // revoke SETELAH draw
+                    URL.revokeObjectURL(objUrl);
+                    // clear img ref
+                    imgEl.src = '';
+
+                    c.toBlob(blob => {
+                        c.width = c.height = 0; // free canvas memory
+                        doUpload(blob || file, file.name);
                     }, 'image/jpeg', JPEG_QUALITY);
 
-                } catch(e) { cleanup(); resolve(file); }
+                } catch(e) {
+                    URL.revokeObjectURL(objUrl);
+                    doUpload(file, file.name);
+                }
             };
 
-            img.src = url;
-        } catch(e) { resolve(file); }
+            imgEl.src = objUrl;
+
+        } catch(e) { doUpload(file, file.name); }
+
+        function doUpload(data, name) {
+            sumEl.textContent = `อัปโหลด ${idx}/${total}...`;
+            setStatus('⬆');
+            const fd = new FormData();
+            fd.append('ajax_upload', '1');
+            fd.append('image', data, name || 'img.jpg');
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', UPLOAD_URL);
+            xhr.upload.onprogress = e => {
+                if (e.lengthComputable) setBar(Math.round(e.loaded/e.total*100));
+            };
+            xhr.onload = () => {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res.ok) {
+                        el.classList.add('done'); setStatus('✓');
+                        // แสดง thumbnail เล็กๆ หลัง upload สำเร็จ (ไม่กิน memory เพราะเล็กแล้ว)
+                        if (res.thumb) {
+                            const img2 = new Image();
+                            img2.onload = () => {
+                                const ph = el.querySelector('div');
+                                if (ph) ph.replaceWith(img2);
+                            };
+                            img2.style.cssText = 'width:100%;height:70px;object-fit:cover;display:block;';
+                            img2.src = res.thumb;
+                        }
+                        addToGallery(res.filename, res.url, res.thumb);
+                    } else {
+                        el.classList.add('error'); setStatus('✗');
+                    }
+                } catch(e) { el.classList.add('error'); setStatus('✗'); }
+                _done++; updateSummary(); resolve();
+            };
+            xhr.onerror = () => { el.classList.add('error'); setStatus('✗'); _done++; updateSummary(); resolve(); };
+            xhr.send(fd);
+        }
     });
 }
 
@@ -387,94 +443,29 @@ async function handleFiles(fileList) {
     if (files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
 
     document.getElementById('queue').innerHTML = '';
+    document.getElementById('imgInput').value = '';
     const sumEl = document.getElementById('summary');
     sumEl.style.display = 'block';
     sumEl.style.color   = '#7c3aed';
     _done = 0; _total  = files.length;
-    document.getElementById('imgInput').value = '';
+    sumEl.textContent   = `เตรียม ${_total} รูป...`;
 
-    // สร้าง queue items ทั้งหมด (preview ทันที)
-    const items = files.map(file => {
-        const item = createQueueItem(file);
-        document.getElementById('queue').appendChild(item.el);
-        return { file, item };
-    });
-
-    // resize + upload ทีละ batch (resize sequential ใน batch เพื่อ save memory)
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-        const batch = items.slice(i, i + BATCH_SIZE);
-
-        // resize ทีละ 1 ใน batch นี้
-        const resized = [];
-        for (const {file, item} of batch) {
-            item.el.querySelector('.pg-status').textContent = '↻';
-            sumEl.textContent = `ปรับขนาด ${i + resized.length + 1}/${_total}...`;
-            const blob = await resizeImage(file);
-            item.el.querySelector('.pg-status').textContent = 'รอ...';
-            resized.push({ blob, item, name: file.name });
-        }
-
-        // upload batch นี้พร้อมกัน
-        sumEl.textContent = `อัปโหลด ${i+1}–${Math.min(i+BATCH_SIZE,_total)}/${_total}...`;
-        await Promise.all(resized.map(({blob, item, name}) => uploadFile(blob, item, name)));
+    // process ทีละ 1 รูป เพื่อ memory คงที่
+    for (let i = 0; i < files.length; i++) {
+        await resizeAndUpload(files[i], i + 1, files.length, sumEl);
     }
 }
 
+// ไม่ใช้แล้ว แต่เก็บไว้ไม่ให้ error ถ้ามี reference อื่น
 function createQueueItem(file) {
-    const el  = document.createElement('div');
+    const el = document.createElement('div');
     el.className = 'pg-item';
-    const url = URL.createObjectURL(file);
-    el.innerHTML = `<img src="${url}" onload="URL.revokeObjectURL(this.src)">
+    el.innerHTML = `<div style="height:70px;background:#ede5f5;"></div>
         <div class="pg-bar-wrap"><div class="pg-bar"></div></div>
         <div class="pg-status">รอ...</div>`;
     return { el };
 }
 
-function uploadFile(blob, item, name) {
-    return new Promise(resolve => {
-        const fd = new FormData();
-        fd.append('ajax_upload', '1');
-        fd.append('image', blob, name || 'image.jpg');
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', UPLOAD_URL);
-
-        xhr.upload.onprogress = e => {
-            if (!e.lengthComputable) return;
-            const pct = Math.round(e.loaded / e.total * 100);
-            item.el.querySelector('.pg-bar').style.width = pct + '%';
-            item.el.querySelector('.pg-status').textContent = pct + '%';
-        };
-
-        xhr.onload = () => {
-            try {
-                const res = JSON.parse(xhr.responseText);
-                const st  = item.el.querySelector('.pg-status');
-                if (res.ok) {
-                    item.el.classList.add('done');
-                    if (st) st.textContent = '✓';
-                    addToGallery(res.filename, res.url, res.thumb);
-                } else {
-                    item.el.classList.add('error');
-                    if (st) st.textContent = 'ผิดพลาด';
-                }
-            } catch(e) { item.el.classList.add('error'); }
-            _done++;
-            updateSummary();
-            resolve();
-        };
-
-        xhr.onerror = () => {
-            item.el.classList.add('error');
-            item.el.querySelector('.pg-status').textContent = 'error';
-            _done++;
-            updateSummary();
-            resolve();
-        };
-
-        xhr.send(fd);
-    });
-}
 
 function addToGallery(filename, url, thumb) {
     const empty = document.getElementById('emptyMsg');
