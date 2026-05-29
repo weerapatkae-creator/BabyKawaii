@@ -370,57 +370,59 @@ $currentType = $product['product_type'] ?? 'single';
     <div id="bundleSection" class="card <?= $currentType!=='bundle'?'d-none':'' ?>">
         <div class="card-header">
             <span class="card-title">🎁 สินค้าในเซต</span>
-            <button type="button" class="btn btn-sm btn-primary" onclick="addBundleItem()">
-                <i class="fas fa-plus me-1"></i> เพิ่มสินค้าในเซต
-            </button>
+            <span style="font-size:.72rem;color:#aaa;">ลากหรือคลิกสินค้าเพื่อเพิ่ม</span>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table mb-0" style="font-size:0.85rem;">
-                    <thead>
-                        <tr>
-                            <th style="min-width:200px;">สินค้า</th>
-                            <th style="min-width:110px;">ไซต์</th>
-                            <th style="min-width:130px;">สี</th>
-                            <th style="width:80px;text-align:center;">จำนวน</th>
-                            <th style="width:100px;text-align:right;">ราคา/ชิ้น</th>
-                            <th style="width:90px;text-align:center;">สต็อก</th>
-                            <th style="width:44px;"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="bundleItemsTbody">
-                        <!-- JS will populate, or pre-fill from existing bundle -->
-                    </tbody>
-                </table>
-            </div>
-            <div id="bundleEmptyMsg" class="text-center py-4 text-muted <?= !empty($bundleItems)?'d-none':'' ?>">
-                <div style="font-size:2rem;">🎁</div>
-                <p class="mb-0" style="font-size:0.85rem;">คลิก "เพิ่มสินค้าในเซต" เพื่อเริ่มสร้างเซต</p>
-            </div>
+            <div class="bundle-builder-wrap">
 
-            <!-- Bundle summary footer -->
-            <div id="bundleSummaryBar" class="px-4 py-3 border-top <?= empty($bundleItems)?'d-none':'' ?>"
-                style="background:var(--lavender);border-radius:0 0 var(--radius) var(--radius);">
-                <div class="row g-3 align-items-center">
-                    <div class="col-auto">
-                        <span style="font-size:0.8rem;color:var(--text-muted);">ราคาปกติรวม</span><br>
-                        <span id="bundleRegularTotal" style="font-size:1.1rem;font-weight:600;text-decoration:line-through;color:var(--text-muted);">฿0</span>
+                <!-- ── LEFT: product picker ── -->
+                <div class="bpicker-pane">
+                    <div class="bpicker-search">
+                        <input type="text" id="bpickerQ" class="form-control form-control-sm"
+                               placeholder="🔍 ค้นหาสินค้า..." oninput="filterBundlePicker(this.value)">
                     </div>
-                    <div class="col-auto"><i class="fas fa-arrow-right text-muted"></i></div>
-                    <div class="col-auto">
-                        <span style="font-size:0.8rem;color:var(--text-muted);">ราคาเซต (ที่ตั้งไว้)</span><br>
-                        <span id="bundleSetPrice" style="font-size:1.1rem;font-weight:700;color:var(--pink-dark);">฿0</span>
+                    <div id="bpickerList" class="bpicker-list"></div>
+                </div>
+
+                <!-- ── RIGHT: drop zone ── -->
+                <div class="bdrop-pane">
+                    <div id="bundleDropZone" class="bdrop-zone"
+                         ondragover="event.preventDefault();this.classList.add('drag-over')"
+                         ondragleave="this.classList.remove('drag-over')"
+                         ondrop="onBundleDrop(event)">
+                        <div id="bundleEmptyMsg" class="bdrop-empty <?= !empty($bundleItems)?'d-none':'' ?>">
+                            <div style="font-size:2.2rem;">🎁</div>
+                            <div style="font-size:.8rem;color:#bbb;margin-top:6px;">ลากหรือกดสินค้าจากซ้าย<br>เพื่อเพิ่มในเซต</div>
+                        </div>
+                        <div id="bundleItemsList"></div>
                     </div>
-                    <div class="col-auto">
-                        <span style="font-size:0.8rem;color:var(--text-muted);">ลูกค้าประหยัด</span><br>
-                        <span id="bundleSavings" style="font-size:1.1rem;font-weight:700;color:#3DD98F;">฿0</span>
-                    </div>
-                    <div class="col-auto ms-auto">
-                        <span style="font-size:0.8rem;color:var(--text-muted);">สต็อกเซต (ที่ทำได้)</span><br>
-                        <span id="bundleVirtualStock" style="font-size:1.1rem;font-weight:700;color:var(--lavender-dark);">— เซต</span>
+
+                    <!-- Bundle summary footer -->
+                    <div id="bundleSummaryBar" class="px-4 py-3 border-top <?= empty($bundleItems)?'d-none':'' ?>"
+                        style="background:var(--lavender);border-radius:0 0 var(--radius) var(--radius);">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-auto">
+                                <span style="font-size:0.8rem;color:var(--text-muted);">ราคาปกติรวม</span><br>
+                                <span id="bundleRegularTotal" style="font-size:1.1rem;font-weight:600;text-decoration:line-through;color:var(--text-muted);">฿0</span>
+                            </div>
+                            <div class="col-auto"><i class="fas fa-arrow-right text-muted"></i></div>
+                            <div class="col-auto">
+                                <span style="font-size:0.8rem;color:var(--text-muted);">ราคาเซต</span><br>
+                                <span id="bundleSetPrice" style="font-size:1.1rem;font-weight:700;color:var(--pink-dark);">฿0</span>
+                            </div>
+                            <div class="col-auto">
+                                <span style="font-size:0.8rem;color:var(--text-muted);">ประหยัด</span><br>
+                                <span id="bundleSavings" style="font-size:1.1rem;font-weight:700;color:#3DD98F;">฿0</span>
+                            </div>
+                            <div class="col-auto ms-auto">
+                                <span style="font-size:0.8rem;color:var(--text-muted);">สต็อกเซต</span><br>
+                                <span id="bundleVirtualStock" style="font-size:1.1rem;font-weight:700;color:var(--lavender-dark);">— เซต</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+
+            </div><!-- .bundle-builder-wrap -->
         </div>
     </div>
 
@@ -542,50 +544,70 @@ $currentType = $product['product_type'] ?? 'single';
 .bi-stock-low  { color:#856404; font-weight:600; }
 .bi-stock-out  { color:#dc3545; font-weight:600; }
 
-/* ── Mobile bundle table → card layout ────────────────────── */
+/* ── Bundle drag-drop builder ──────────────────────────────── */
+.bundle-builder-wrap {
+    display: flex;
+    min-height: 320px;
+}
+.bpicker-pane {
+    width: 46%;
+    border-right: 1.5px solid #ede5f5;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+.bpicker-search { padding: 10px 12px; border-bottom: 1px solid #f3ecfb; }
+.bpicker-list   { flex: 1; overflow-y: auto; padding: 8px 10px; max-height: 380px; display: flex; flex-direction: column; gap: 8px; }
+
+/* product card in picker */
+.bpicker-product { border: 1.5px solid #ede5f5; border-radius: 10px; overflow: hidden; background:#fafafa; }
+.bpicker-product-header { padding: 8px 10px; font-size: .8rem; font-weight: 700; color: #444; background: #f5f0fb; display:flex; align-items:center; gap:6px; }
+.bpicker-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; }
+.bchip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 20px; font-size: .72rem; font-weight: 600;
+    cursor: grab; user-select: none;
+    border: 1.5px solid #ddd; background: #fff;
+    transition: transform .12s, box-shadow .12s;
+}
+.bchip:hover  { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,.12); }
+.bchip:active { cursor: grabbing; transform: scale(.96); }
+.bchip.out    { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+.bchip.low    { background:#fffbeb; border-color:#fde68a; color:#b45309; }
+.bchip.ok     { background:#f0fdf4; border-color:#bbf7d0; color:#15803d; }
+
+/* drop zone */
+.bdrop-pane   { flex: 1; display: flex; flex-direction: column; }
+.bdrop-zone   { flex: 1; padding: 10px; min-height: 200px; transition: background .15s; }
+.bdrop-zone.drag-over { background: #f5f0ff; outline: 2px dashed #9b72cf; outline-offset:-4px; border-radius:8px; }
+.bdrop-empty  { text-align: center; padding: 40px 16px; pointer-events: none; }
+
+/* bundle item card (right side) */
+.bi-card {
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1.5px solid #e5d8f7; border-radius: 10px;
+    padding: 8px 10px; margin-bottom: 6px;
+    box-shadow: 0 1px 4px rgba(155,114,207,.1);
+}
+.bi-card-info { flex: 1; min-width: 0; }
+.bi-card-name { font-size: .8rem; font-weight: 700; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bi-card-meta { font-size: .68rem; color: #888; margin-top: 1px; }
+.bi-qty-wrap  { display: flex; align-items: center; gap: 4px; }
+.bi-qty-wrap button {
+    width:24px; height:24px; border-radius:50%; border:1.5px solid #ddd; background:#fff;
+    font-size:.85rem; line-height:1; cursor:pointer; display:flex;align-items:center;justify-content:center;
+    color:#666; padding:0;
+}
+.bi-qty-wrap button:hover { border-color:#9b72cf; color:#9b72cf; }
+.bi-qty-inp  { width:36px; text-align:center; border:1.5px solid #ddd; border-radius:6px; font-size:.82rem; padding:2px 0; }
+.bi-remove   { background:none; border:none; color:#ddd; cursor:pointer; font-size:.85rem; padding:2px 4px; line-height:1; }
+.bi-remove:hover { color:#dc2626; }
+
 @media (max-width: 640px) {
-    #bundleSection .table-responsive { overflow: visible; }
-    #bundleSection table thead { display: none; }
-    #bundleSection table, #bundleSection tbody { display: block; }
-    #bundleSection tbody { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
-
-    .bundle-item-row {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto;
-        gap: 6px;
-        background: #fff;
-        border: 1.5px solid #ede5f5 !important;
-        border-radius: 12px !important;
-        padding: 10px !important;
-        box-shadow: 0 1px 3px rgba(44,42,48,.06);
-    }
-    /* สินค้า — full width */
-    .bundle-item-row .bi-td-product { grid-column: 1 / -1; }
-    /* ไซต์ + สี — 2 columns */
-    .bundle-item-row .bi-td-size  { grid-column: 1; }
-    .bundle-item-row .bi-td-color { grid-column: 2; }
-    /* จำนวน + ราคา — side by side */
-    .bundle-item-row .bi-td-qty   { grid-column: 1; }
-    .bundle-item-row .bi-td-price { grid-column: 2; display:flex; align-items:center; justify-content:flex-end; font-weight:700; color:#c05a78 !important; }
-    /* สต็อก + delete */
-    .bundle-item-row .bi-td-stock { grid-column: 1; display:flex; align-items:center; font-size:0.78rem; }
-    .bundle-item-row .bi-td-del   { grid-column: 2; display:flex; align-items:center; justify-content:flex-end; }
-
-    /* Label above each cell */
-    .bundle-item-row td[data-label]::before {
-        content: attr(data-label);
-        display: block;
-        font-size: 0.6rem;
-        font-weight: 700;
-        color: #9b72cf;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        margin-bottom: 3px;
-    }
-    .bundle-item-row .bi-td-del::before,
-    .bundle-item-row .bi-td-price::before,
-    .bundle-item-row .bi-td-stock::before { display: none; }
+    .bundle-builder-wrap { flex-direction: column; }
+    .bpicker-pane { width: 100%; border-right: none; border-bottom: 1.5px solid #ede5f5; }
+    .bpicker-list { max-height: 220px; }
+    .bdrop-zone   { min-height: 140px; }
 }
 
 /* ── Mobile stock table → card layout ─────────────────────── */
@@ -822,158 +844,152 @@ document.getElementById('sellingPriceInput')?.addEventListener('input', () => {
 document.getElementById('costPriceInput')?.addEventListener('input', updateProfit);
 
 // ── BUNDLE: ITEM ROWS ────────────────────────────────────────────────────────
-function addBundleItem(prefill = null) {
-    const idx = bundleRowIdx++;
-    const tbody = document.getElementById('bundleItemsTbody');
-    document.getElementById('bundleEmptyMsg')?.classList.add('d-none');
-    document.getElementById('bundleSummaryBar')?.classList.remove('d-none');
+// ── BUNDLE: DRAG-DROP PICKER ─────────────────────────────────────────────────
 
-    // Build product options
-    const productOpts = Object.entries(PRODUCTS_STOCK).map(([id, p]) =>
-        `<option value="${id}" ${prefill?.product_id == id ? 'selected' : ''}>${p.name} (${p.sku})</option>`
-    ).join('');
-
-    const tr = document.createElement('tr');
-    tr.className = 'bundle-item-row';
-    tr.dataset.idx = idx;
-    tr.innerHTML = `
-        <td data-label="สินค้า" class="bi-td-product">
-            <select name="bundle_items[${idx}][product_id]" class="form-select form-select-sm bi-product" onchange="onBiProductChange(this)">
-                <option value="">-- เลือกสินค้า --</option>${productOpts}
-            </select>
-        </td>
-        <td data-label="ไซต์" class="bi-td-size">
-            <select name="bundle_items[${idx}][size]" class="form-select form-select-sm bi-size" onchange="onBiSizeChange(this)">
-                <option value="">-- ไซต์ --</option>
-            </select>
-        </td>
-        <td data-label="สี" class="bi-td-color">
-            <select name="bundle_items[${idx}][color]" class="form-select form-select-sm bi-color" onchange="updateBundleSummary()">
-                <option value="">-- สี --</option>
-            </select>
-        </td>
-        <td data-label="จำนวน" class="bi-td-qty">
-            <input type="number" name="bundle_items[${idx}][quantity]"
-                class="form-control form-control-sm bi-qty text-center"
-                value="${prefill?.quantity || 1}" min="1"
-                onchange="updateBundleSummary()">
-        </td>
-        <td class="bi-price-cell bi-td-price" data-label="ราคา" style="color:var(--text-muted);">—</td>
-        <td class="bi-stock-cell bi-td-stock" data-label="สต็อก" style="text-align:center;">—</td>
-        <td class="bi-td-del">
-            <button type="button" style="background:none;border:none;color:#ddd;cursor:pointer;font-size:0.85rem;padding:4px;"
-                onclick="this.closest('tr').remove(); checkBundleEmpty(); updateBundleSummary();">
-                <i class="fas fa-times"></i>
-            </button>
-        </td>`;
-    tbody.appendChild(tr);
-
-    if (prefill?.product_id) {
-        const pSel = tr.querySelector('.bi-product');
-        populateBiSizes(pSel);
-        setTimeout(() => {
-            const sSel = tr.querySelector('.bi-size');
-            sSel.value = prefill.size || '';
-            populateBiColors(sSel);
-            setTimeout(() => {
-                tr.querySelector('.bi-color').value = prefill.color || '';
-                updateBundleSummary();
-            }, 0);
-        }, 0);
+function renderBundlePicker(filter = '') {
+    const list = document.getElementById('bpickerList');
+    if (!list) return;
+    const q = filter.toLowerCase();
+    list.innerHTML = '';
+    Object.entries(PRODUCTS_STOCK).forEach(([pid, p]) => {
+        if (q && !p.name.toLowerCase().includes(q) && !(p.sku||'').toLowerCase().includes(q)) return;
+        const chipHtml = Object.entries(p.sizes).map(([size, colors]) =>
+            colors.map(c => {
+                const cls = c.qty === 0 ? 'out' : c.qty <= 3 ? 'low' : 'ok';
+                const data = JSON.stringify({pid, size, color: c.color, qty: c.qty});
+                return `<span class="bchip ${cls}"
+                    draggable="true"
+                    onclick="addBundleItemByData(${escAttrJson(data)})"
+                    ondragstart="onChipDragStart(event,${escAttrJson(data)})"
+                    title="คลิกหรือลากเพื่อเพิ่ม">
+                    ${size} · ${c.color} <span style="opacity:.7;font-size:.65rem;">(${c.qty})</span>
+                </span>`;
+            }).join('')
+        ).join('');
+        if (!chipHtml) return;
+        list.insertAdjacentHTML('beforeend', `
+            <div class="bpicker-product">
+                <div class="bpicker-product-header">
+                    <span style="flex:1;">${p.name}</span>
+                    ${p.sku ? `<span style="font-size:.65rem;color:#aaa;">${p.sku}</span>` : ''}
+                </div>
+                <div class="bpicker-chips">${chipHtml}</div>
+            </div>`);
+    });
+    if (!list.children.length) {
+        list.innerHTML = '<div style="text-align:center;color:#ccc;padding:24px;font-size:.8rem;">ไม่พบสินค้า</div>';
     }
 }
 
-function onBiProductChange(sel) { populateBiSizes(sel); updateBundleSummary(); }
-function onBiSizeChange(sel)    { populateBiColors(sel); updateBundleSummary(); }
-
-function populateBiSizes(productSel) {
-    const row     = productSel.closest('tr');
-    const pid     = productSel.value;
-    const sizeSel = row.querySelector('.bi-size');
-    const colSel  = row.querySelector('.bi-color');
-    sizeSel.innerHTML = '<option value="">-- ไซต์ --</option>';
-    colSel.innerHTML  = '<option value="">-- สี --</option>';
-    row.querySelector('.bi-price-cell').textContent = '—';
-    row.querySelector('.bi-stock-cell').innerHTML   = '<span style="color:var(--text-muted);">—</span>';
-    if (!pid || !PRODUCTS_STOCK[pid]) return;
-    Object.keys(PRODUCTS_STOCK[pid].sizes).forEach(sz => {
-        sizeSel.innerHTML += `<option value="${sz}">${sz}</option>`;
-    });
-    row.querySelector('.bi-price-cell').textContent = '฿' + PRODUCTS_STOCK[pid].price.toLocaleString('th-TH');
+function escAttrJson(obj) {
+    return JSON.stringify(obj).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
-function populateBiColors(sizeSel) {
-    const row    = sizeSel.closest('tr');
-    const pid    = row.querySelector('.bi-product').value;
-    const size   = sizeSel.value;
-    const colSel = row.querySelector('.bi-color');
-    colSel.innerHTML = '<option value="">-- สี --</option>';
-    row.querySelector('.bi-stock-cell').innerHTML = '<span style="color:var(--text-muted);">—</span>';
-    if (!pid || !size || !PRODUCTS_STOCK[pid]) return;
-    const colors = PRODUCTS_STOCK[pid].sizes[size] || [];
-    colors.forEach(c => {
-        colSel.innerHTML += `<option value="${c.color}">${c.color} (${c.qty})</option>`;
-    });
-    if (colors.length === 1) { colSel.value = colors[0].color; refreshStockCell(row, pid, size, colors[0].color); }
+function filterBundlePicker(q) { renderBundlePicker(q); }
+
+let _dragData = null;
+function onChipDragStart(event, data) {
+    _dragData = data;
+    event.dataTransfer.effectAllowed = 'copy';
 }
 
-function refreshStockCell(row, pid, size, color) {
-    const p      = PRODUCTS_STOCK[pid];
+function onBundleDrop(event) {
+    event.preventDefault();
+    document.getElementById('bundleDropZone')?.classList.remove('drag-over');
+    if (_dragData) { addBundleItemByData(_dragData); _dragData = null; }
+}
+
+function addBundleItemByData(data, qty = 1) {
+    const { pid, size, color } = typeof data === 'string' ? JSON.parse(data) : data;
+    const p = PRODUCTS_STOCK[pid];
     if (!p) return;
+    const idx = bundleRowIdx++;
     const colors = (p.sizes[size] || []);
     const match  = colors.find(c => c.color === color);
-    const qty    = match ? match.qty : 0;
-    const cls    = qty === 0 ? 'bi-stock-out' : qty <= 5 ? 'bi-stock-low' : 'bi-stock-ok';
-    row.querySelector('.bi-stock-cell').innerHTML = `<span class="${cls}">${qty}</span>`;
+    const stock  = match ? match.qty : 0;
+    const cls    = stock === 0 ? 'bi-stock-out' : stock <= 3 ? 'bi-stock-low' : 'bi-stock-ok';
+
+    document.getElementById('bundleEmptyMsg')?.classList.add('d-none');
+    document.getElementById('bundleSummaryBar')?.classList.remove('d-none');
+
+    const card = document.createElement('div');
+    card.className = 'bi-card';
+    card.dataset.idx = idx;
+    card.innerHTML = `
+        <input type="hidden" name="bundle_items[${idx}][product_id]" value="${pid}">
+        <input type="hidden" name="bundle_items[${idx}][size]"       value="${size}">
+        <input type="hidden" name="bundle_items[${idx}][color]"      value="${color}">
+        <div class="bi-card-info">
+            <div class="bi-card-name">${p.name}</div>
+            <div class="bi-card-meta">${size} · ${color} · สต็อก: <span class="${cls}">${stock}</span></div>
+        </div>
+        <div class="bi-qty-wrap">
+            <button type="button" onclick="adjustBiQty(this,-1)">−</button>
+            <input type="number" class="bi-qty-inp" name="bundle_items[${idx}][quantity]"
+                   value="${qty}" min="1" oninput="updateBundleSummary()">
+            <button type="button" onclick="adjustBiQty(this,1)">+</button>
+        </div>
+        <button type="button" class="bi-remove" onclick="removeBundleItem(this)" title="ลบ">
+            <i class="fas fa-times"></i>
+        </button>`;
+    document.getElementById('bundleItemsList').appendChild(card);
+    updateBundleSummary();
+}
+
+function adjustBiQty(btn, delta) {
+    const inp = btn.parentElement.querySelector('.bi-qty-inp');
+    inp.value = Math.max(1, (parseInt(inp.value) || 1) + delta);
+    updateBundleSummary();
+}
+
+function removeBundleItem(btn) {
+    btn.closest('.bi-card').remove();
+    const list = document.getElementById('bundleItemsList');
+    if (!list.children.length) {
+        document.getElementById('bundleEmptyMsg')?.classList.remove('d-none');
+        document.getElementById('bundleSummaryBar')?.classList.add('d-none');
+    }
+    updateBundleSummary();
 }
 
 function updateBundleSummary() {
-    const rows = document.querySelectorAll('.bundle-item-row');
-    let totalRegular = 0, totalCost = 0, minSets = Infinity;
-    let valid = 0;
+    const cards = document.querySelectorAll('.bi-card');
+    let totalRegular = 0, totalCost = 0, minSets = Infinity, valid = 0;
 
-    rows.forEach(row => {
-        const pid   = row.querySelector('.bi-product').value;
-        const size  = row.querySelector('.bi-size').value;
-        const color = row.querySelector('.bi-color').value;
-        const qty   = parseInt(row.querySelector('.bi-qty').value) || 1;
-        if (!pid || !size || !color) return;
-        const p      = PRODUCTS_STOCK[pid];
-        if (!p) return;
-        const colors = (p.sizes[size] || []);
-        const match  = colors.find(c => c.color === color);
-        const stock  = match ? match.qty : 0;
+    cards.forEach(card => {
+        const pid   = card.querySelector('[name$="[product_id]"]').value;
+        const size  = card.querySelector('[name$="[size]"]').value;
+        const color = card.querySelector('[name$="[color]"]').value;
+        const qty   = parseInt(card.querySelector('.bi-qty-inp').value) || 1;
+        const p = PRODUCTS_STOCK[pid]; if (!p) return;
+        const match = (p.sizes[size] || []).find(c => c.color === color);
+        const stock = match ? match.qty : 0;
         valid++;
         totalRegular += p.price * qty;
         totalCost    += p.cost  * qty;
         if (qty > 0) minSets = Math.min(minSets, Math.floor(stock / qty));
-        refreshStockCell(row, pid, size, color);
     });
 
-    const setPrice = parseFloat(document.getElementById('sellingPriceInput').value) || 0;
-    const savings  = totalRegular - setPrice;
-    const profit   = setPrice - totalCost;
+    const setPrice   = parseFloat(document.getElementById('sellingPriceInput').value) || 0;
+    const savings    = totalRegular - setPrice;
+    const profit     = setPrice - totalCost;
     const savingsPct = totalRegular > 0 ? (savings / totalRegular * 100).toFixed(0) : 0;
 
     document.getElementById('bundleRegularTotal').textContent = '฿' + totalRegular.toLocaleString('th-TH');
     document.getElementById('bundleSetPrice').textContent     = '฿' + setPrice.toLocaleString('th-TH');
     document.getElementById('bundleSavings').textContent      = (savings >= 0 ? '+฿' : '-฿') + Math.abs(savings).toLocaleString('th-TH');
     document.getElementById('bundleVirtualStock').textContent = (valid === 0 || minSets === Infinity ? '—' : minSets) + ' เซต';
-
     document.getElementById('bpRegular').textContent  = '฿' + totalRegular.toLocaleString('th-TH');
     document.getElementById('bpSet').textContent      = '฿' + setPrice.toLocaleString('th-TH');
     document.getElementById('bpCost').textContent     = '฿' + totalCost.toLocaleString('th-TH');
     document.getElementById('bpProfit').textContent   = '฿' + profit.toLocaleString('th-TH');
     document.getElementById('bpSavings').textContent  = `฿${Math.abs(savings).toLocaleString('th-TH')} (${savingsPct}%)`;
     document.getElementById('bpProfit').style.color   = profit >= 0 ? '#3DD98F' : '#FF5757';
-
-    // Auto-fill cost_price
-    document.getElementById('costPriceInput').value = totalCost;
+    document.getElementById('costPriceInput').value   = totalCost;
 }
 
 function checkBundleEmpty() {
-    const rows = document.querySelectorAll('.bundle-item-row');
-    if (rows.length === 0) {
+    if (!document.querySelectorAll('.bi-card').length) {
         document.getElementById('bundleEmptyMsg')?.classList.remove('d-none');
         document.getElementById('bundleSummaryBar')?.classList.add('d-none');
     }
@@ -999,9 +1015,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btnBundle').disabled = true;
     }
 
+    // Render product picker
+    renderBundlePicker();
+
     // Pre-fill bundle items when editing
     if (BUNDLE_PREFILL && BUNDLE_PREFILL.length > 0) {
-        BUNDLE_PREFILL.forEach(item => addBundleItem(item));
+        BUNDLE_PREFILL.forEach(item => addBundleItemByData(
+            { pid: item.product_id, size: item.size, color: item.color },
+            parseInt(item.quantity) || 1
+        ));
     }
 
     const currentType = document.getElementById('productTypeInput').value;
