@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>พรีวิวสกินใหม่ — BabyKawaii (โครงสร้าง PHP จริง)</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<!-- ไฟล์สกินใหม่ที่จะนำไปแทน assets/css/style.css -->
+<link href="php-skin/assets/css/style.css" rel="stylesheet">
+<style>
+  /* แถบเตือนพรีวิวเท่านั้น ไม่อยู่ในไฟล์จริง */
+  .preview-note{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:2000;background:#2C2A30;color:#fff;font-family:'Noto Sans Thai',sans-serif;font-size:.8rem;padding:8px 16px;border-radius:20px;box-shadow:0 6px 20px rgba(0,0,0,.25);opacity:.92}
+</style>
+</head>
+<body>
+
+<!-- ===== Top Navbar (ตรงกับ header.php) ===== -->
+<nav class="navbar navbar-expand-lg navbar-top fixed-top">
+  <div class="container-fluid">
+    <button class="btn btn-link sidebar-toggle me-1"><i class="fas fa-bars"></i></button>
+    <a class="navbar-brand" href="#"><span class="brand-text">BabyKawaii Shop</span></a>
+    <form class="topbar-search d-none d-lg-flex" onsubmit="return false">
+      <i class="fas fa-search"></i>
+      <input type="text" placeholder="ค้นหาสินค้า ออเดอร์ ลูกค้า…">
+    </form>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <a href="#" class="btn btn-sm btn-warning position-relative"><i class="fas fa-box-open"></i><span class="badge bg-danger badge-pill ms-1">6</span><span class="d-none d-md-inline ms-1">สต็อกใกล้หมด</span></a>
+      <a href="#" class="btn btn-sm btn-info position-relative"><i class="fas fa-shopping-bag"></i><span class="badge bg-danger badge-pill ms-1">14</span><span class="d-none d-md-inline ms-1">ออเดอร์ใหม่</span></a>
+      <a href="#" class="btn btn-sm btn-danger position-relative"><i class="fas fa-comment-dots"></i><span class="badge bg-white text-danger badge-pill ms-1">3</span><span class="d-none d-md-inline ms-1">ข้อความใหม่</span></a>
+      <div class="dropdown">
+        <button class="btn btn-link dropdown-toggle user-btn" data-bs-toggle="dropdown"><span class="user-avatar-circle">พ</span><span class="d-none d-md-inline">พิมพ์ชนก</span></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#"><i class="fas fa-cog me-2"></i>ตั้งค่า</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="#"><i class="fas fa-sign-out-alt me-2"></i>ออกจากระบบ</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="wrapper">
+  <!-- ===== Sidebar (ตรงกับ sidebar.php) ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div style="font-weight:800;font-size:1.15rem;color:#fff;letter-spacing:-.01em">Baby<span style="color:var(--sidebar-active)">kawaii</span></div>
+      <div class="shop-subtitle">⭐ Superadmin</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">ภาพรวม</div>
+      <a href="#" class="nav-item active"><i class="fas fa-chart-pie"></i><span>Dashboard</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-shopping-bag"></i><span>ออเดอร์ / คำสั่งซื้อ</span><span class="nav-badge">14</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-comment-dots"></i><span>Inbox ข้อความ</span><span class="nav-badge">3</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-chart-line"></i><span>ยอดขาย &amp; วิเคราะห์</span></a>
+      <div class="nav-section-label">คลังสินค้า</div>
+      <a href="#" class="nav-item"><i class="fas fa-tshirt"></i><span>สินค้าทั้งหมด</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-plus-circle"></i><span>เพิ่มสินค้าใหม่</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-boxes-stacked"></i><span>จัดการสต็อก</span><span class="nav-badge">6</span></a>
+      <div class="nav-section-label">การตลาด & สื่อ</div>
+      <a href="#" class="nav-item"><i class="fas fa-photo-film"></i><span>คลังสื่อ</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-calendar-days"></i><span>ปฏิทินโพสต์</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-tag"></i><span>โปรโมชั่น</span></a>
+      <div class="nav-section-label">ลูกค้า & ช่องทาง</div>
+      <a href="#" class="nav-item"><i class="fas fa-users"></i><span>ฐานข้อมูลลูกค้า</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-share-nodes"></i><span>แพลตฟอร์มขาย</span></a>
+      <div class="nav-section-label">จัดการระบบ</div>
+      <a href="#" class="nav-item"><i class="fas fa-users-gear"></i><span>จัดการผู้ใช้งาน</span></a>
+      <a href="#" class="nav-item"><i class="fas fa-gear"></i><span>ตั้งค่าร้าน</span></a>
+    </nav>
+    <div class="sidebar-platforms">
+      <div class="platform-title">แพลตฟอร์มของฉัน</div>
+      <div class="platform-icons">
+        <a href="#" class="platform-icon fb"><i class="fab fa-facebook-f"></i></a>
+        <a href="#" class="platform-icon tt"><i class="fab fa-tiktok"></i></a>
+        <a href="#" class="platform-icon ig"><i class="fab fa-instagram"></i></a>
+        <a href="#" class="platform-icon ln"><i class="fab fa-line"></i></a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== Main content ===== -->
+  <div class="main-content">
+    <div class="page-header">
+      <div>
+        <nav class="breadcrumb"><span class="breadcrumb-item active">หน้าหลัก</span></nav>
+        <h1 class="page-title">Dashboard</h1>
+        <div class="page-subtitle">สวัสดีคุณพิมพ์ชนก 🌸 วันนี้วันศุกร์ที่ 29 พฤษภาคม 2569</div>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-pink"><i class="fas fa-download me-1"></i> ส่งออกรายงาน</button>
+        <button class="btn btn-primary"><i class="fas fa-plus me-1"></i> เพิ่มสินค้า</button>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="row g-3 mb-1">
+      <div class="col-6 col-lg-3">
+        <div class="stat-card pink">
+          <i class="fas fa-coins stat-icon"></i>
+          <div class="stat-label">ยอดขายวันนี้</div>
+          <div class="stat-value">฿8,420</div>
+          <div class="stat-change up"><i class="fas fa-arrow-up"></i> 12.4% จากเมื่อวาน</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-card mint">
+          <i class="fas fa-chart-line stat-icon"></i>
+          <div class="stat-label">ยอดขายเดือนนี้</div>
+          <div class="stat-value">฿184,250</div>
+          <div class="stat-change up"><i class="fas fa-arrow-up"></i> 8.1% · 312 ออเดอร์</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-card purple">
+          <i class="fas fa-tshirt stat-icon"></i>
+          <div class="stat-label">สินค้าทั้งหมด</div>
+          <div class="stat-value">86</div>
+          <div class="stat-change">สต็อกรวม 1,240 ชิ้น</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-card orange">
+          <i class="fas fa-truck stat-icon"></i>
+          <div class="stat-label">ออเดอร์รอดำเนินการ</div>
+          <div class="stat-value">14</div>
+          <div class="stat-change down"><i class="fas fa-triangle-exclamation"></i> สต็อกใกล้หมด 6 รายการ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cost & Profit (โฉมใหม่ โทนสว่าง — แทนการ์ดเข้มเดิม) -->
+    <div class="card mt-3 mb-1">
+      <div class="card-header">
+        <span class="card-title">💰 ต้นทุน &amp; กำไร</span>
+        <span class="badge-status badge-inactive">เฉพาะเจ้าของร้าน</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6 col-md-3">
+            <div class="profit-tile"><div class="pt-label">📦 มูลค่าสต็อกปัจจุบัน</div><div class="pt-value pt-blue">฿96,400</div><div class="pt-sub">ต้นทุนสินค้าในมือ</div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="profit-tile"><div class="pt-label">🧾 ต้นทุนขายเดือนนี้</div><div class="pt-value pt-amber">฿71,200</div><div class="pt-sub">รวมทั้งหมด ฿512,800</div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="profit-tile"><div class="pt-label">✨ กำไรขั้นต้นเดือนนี้</div><div class="pt-value pt-green">+฿113,050</div><div class="pt-sub">รวมทั้งหมด +฿842,100</div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="profit-tile"><div class="pt-label">📊 อัตรากำไรขั้นต้น</div><div class="pt-value pt-rose">61.4%</div><div class="pt-bar"><span style="width:61%;background:var(--pink-dark);"></span></div><div class="pt-sub">ตลอดกาล 58.2%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-1">
+      <!-- Orders table -->
+      <div class="col-lg-8">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">📦 ออเดอร์ล่าสุด</h3>
+            <button class="btn btn-sm btn-outline-pink">ดูทั้งหมด</button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table">
+                <thead><tr><th>เลขออเดอร์</th><th>ลูกค้า</th><th>ช่องทาง</th><th>ยอดรวม</th><th>สถานะ</th></tr></thead>
+                <tbody>
+                  <tr><td><strong style="color:var(--pink-dark)">#BK26050</strong></td><td>คุณนภัสสร</td><td><i class="fab fa-tiktok"></i> TikTok</td><td><strong>฿590</strong></td><td><span class="badge-status badge-pending">รอดำเนินการ</span></td></tr>
+                  <tr><td><strong style="color:var(--pink-dark)">#BK26051</strong></td><td>คุณจิรายุ</td><td><i class="fab fa-facebook"></i> Facebook</td><td><strong>฿259</strong></td><td><span class="badge-status badge-confirmed">ยืนยันแล้ว</span></td></tr>
+                  <tr><td><strong style="color:var(--pink-dark)">#BK26052</strong></td><td>คุณพิมพ์มาดา</td><td><i class="fab fa-line"></i> LINE</td><td><strong>฿950</strong></td><td><span class="badge-status badge-packing">กำลังแพ็ค</span></td></tr>
+                  <tr><td><strong style="color:var(--pink-dark)">#BK26053</strong></td><td>คุณธนกฤต</td><td><i class="fab fa-instagram"></i> Instagram</td><td><strong>฿320</strong></td><td><span class="badge-status badge-shipped">จัดส่งแล้ว</span></td></tr>
+                  <tr><td><strong style="color:var(--pink-dark)">#BK26054</strong></td><td>คุณวรินทร</td><td><i class="fab fa-tiktok"></i> TikTok</td><td><strong>฿1,290</strong></td><td><span class="badge-status badge-delivered">ส่งถึงแล้ว</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Low stock + sizes -->
+      <div class="col-lg-4">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">⚠️ สต็อกใกล้หมด</h3></div>
+          <div class="card-body">
+            <div class="mb-3">
+              <div class="d-flex justify-content-between mb-1"><span style="font-weight:600;font-size:.85rem">ชุดนอนซิปยาว ลายดาว</span><span class="badge-status badge-low">4 ชิ้น</span></div>
+              <div class="size-grid">
+                <span class="size-badge size-ok">NB · 12</span>
+                <span class="size-badge size-low">0-3M · 4</span>
+                <span class="size-badge size-out">3-6M · 0</span>
+              </div>
+            </div>
+            <hr>
+            <div class="upload-zone" style="padding:22px">
+              <div class="upload-icon">🖼️</div>
+              <p>ลากรูปสินค้ามาวางที่นี่</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Platform cards -->
+    <div class="row g-3 mt-1">
+      <div class="col-6 col-md-3">
+        <div class="platform-card pf-tiktok"><div class="pf-icon"><i class="fab fa-tiktok"></i></div><div class="pf-name">TikTok Shop</div><div class="pf-stat">฿74,200</div><div class="pf-label">128 ออเดอร์</div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="platform-card pf-facebook"><div class="pf-icon"><i class="fab fa-facebook"></i></div><div class="pf-name">Facebook</div><div class="pf-stat">฿48,900</div><div class="pf-label">84 ออเดอร์</div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="platform-card pf-line"><div class="pf-icon"><i class="fab fa-line"></i></div><div class="pf-name">LINE OA</div><div class="pf-stat">฿33,100</div><div class="pf-label">61 ออเดอร์</div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="platform-card pf-instagram"><div class="pf-icon"><i class="fab fa-instagram"></i></div><div class="pf-name">Instagram</div><div class="pf-stat">฿18,650</div><div class="pf-label">27 ออเดอร์</div></div>
+      </div>
+    </div>
+
+    <!-- Promo + product -->
+    <div class="row g-3 mt-1">
+      <div class="col-md-4">
+        <div class="promo-card">
+          <span class="promo-badge">กำลังใช้งาน</span>
+          <div class="promo-name">ส่งฟรีเมื่อครบ 500.-</div>
+          <div class="promo-value">ส่งฟรี</div>
+          <div class="promo-dates"><i class="fas fa-calendar me-1"></i> 1 พ.ค. – 31 พ.ค.</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="product-card">
+          <div class="product-no-img">👶</div>
+          <div class="product-info">
+            <div class="product-name">บอดี้สูทแขนยาว ลายกระต่าย</div>
+            <div class="d-flex justify-content-between align-items-baseline">
+              <span class="product-price">฿259</span>
+              <span class="product-stock">คงเหลือ 42</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card mb-0">
+          <div class="card-header"><h3 class="card-title">🗓️ ปฏิทินโพสต์</h3></div>
+          <div class="card-body">
+            <div class="calendar-grid">
+              <div class="cal-day"><div class="day-num">27</div></div>
+              <div class="cal-day"><div class="day-num">28</div></div>
+              <div class="cal-day today"><div class="day-num">29</div><div class="cal-event">ไลฟ์ 20:00</div></div>
+              <div class="cal-day"><div class="day-num">30</div><div class="cal-event">โพสต์</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="preview-note">👀 พรีวิว — นี่คือหน้าตาเว็บจริงของคุณหลังเปลี่ยนไฟล์ <code style="color:#F0A7B8">assets/css/style.css</code></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

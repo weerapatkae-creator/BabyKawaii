@@ -1,48 +1,28 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  BabyKawaii — Light / White Logo  (use on dark backgrounds, e.g. sidebar)
-  viewBox: 220 × 54
--->
+<?xml version="1.0"?>
+
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 54" role="img" aria-label="BabyKawaii">
   <defs>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&amp;display=swap');
-    </style>
+    
   </defs>
 
-  <!-- Small onesie icon 36×46 at left -->
+  
   <g transform="translate(2,4)">
-    <path d="
-      M  2,0 Q  0,0  0,2
-      L  0,17 Q -1,21  3,22
-      L  3,40 Q  3,45  7,45
-      L 29,45 Q 33,45 33,40
-      L 33,22 Q 37,21 36,17
-      L 36,2  Q 36,0  34,0
-      L 23,0  Q 22,5  18,9
-               Q 14,5 13,0
-      Z
-    " fill="rgba(255,255,255,0.85)"/>
-    <!-- Heart -->
-    <path d="
-      M 18,34 C 13,31  7,27 10,24 C 12,21 15,21 18,24 C 21,21 24,21 26,24 C 29,27 23,31 18,34 Z
-    " fill="#FF8888"/>
-    <!-- Snaps -->
-    <circle cx="14" cy="43" r="1.2" fill="white" opacity="0.5"/>
-    <circle cx="18" cy="43" r="1.2" fill="white" opacity="0.5"/>
-    <circle cx="22" cy="43" r="1.2" fill="white" opacity="0.5"/>
+    <path d="&#xA;      M  2,0 Q  0,0  0,2&#xA;      L  0,17 Q -1,21  3,22&#xA;      L  3,40 Q  3,45  7,45&#xA;      L 29,45 Q 33,45 33,40&#xA;      L 33,22 Q 37,21 36,17&#xA;      L 36,2  Q 36,0  34,0&#xA;      L 23,0  Q 22,5  18,9&#xA;               Q 14,5 13,0&#xA;      Z&#xA;    " fill="rgba(255,255,255,0.85)"></path>
+    
+    <path d="&#xA;      M 18,34 C 13,31  7,27 10,24 C 12,21 15,21 18,24 C 21,21 24,21 26,24 C 29,27 23,31 18,34 Z&#xA;    " fill="#FF8888"></path>
+    
+    <circle cx="14" cy="43" r="1.2" fill="white" opacity="0.5"></circle>
+    <circle cx="18" cy="43" r="1.2" fill="white" opacity="0.5"></circle>
+    <circle cx="22" cy="43" r="1.2" fill="white" opacity="0.5"></circle>
   </g>
 
-  <!-- "Baby kawaii" text -->
-  <text x="52" y="28" dominant-baseline="middle"
-        font-family="'Fredoka One', 'Nunito ExtraBold', cursive" font-size="26">
+  
+  <text x="52" y="28" dominant-baseline="middle" font-family="&#39;Fredoka One&#39;, &#39;Nunito ExtraBold&#39;, cursive" font-size="26">
     <tspan fill="#7DDDE4">Baby </tspan><tspan fill="#FF9898">kawaii</tspan>
   </text>
 
-  <!-- Subtitle -->
-  <text x="52" y="46"
-        font-family="'Sarabun', Arial, sans-serif"
-        font-size="9" fill="rgba(255,255,255,0.50)" letter-spacing="1.5">
+  
+  <text x="52" y="46" font-family="&#39;Sarabun&#39;, Arial, sans-serif" font-size="9" fill="rgba(255,255,255,0.50)" letter-spacing="1.5">
     Baby clothes
   </text>
 
