@@ -128,25 +128,79 @@ function ShipTool({ convo }) {
 function OrderTool({ onCreate, onDone }) {
   const d = window.BK_DATA;
   const [pi, setPi] = React.useState(0);
+  const [q, setQ] = React.useState("");
   const [size, setSize] = React.useState("0-3M");
   const [qty, setQty] = React.useState(1);
   const p = d.products[pi];
+  const stockBySize = (product) => {
+    const usable = d.sizes.slice(1, 6);
+    return usable.map((s, i) => {
+      const base = product.stock <= 0 ? 0 : Math.max(0, Math.floor(product.stock / usable.length) + ((product.id + i) % 4) - 1);
+      return { size: s, qty: Math.min(product.stock, base) };
+    });
+  };
+  const visibleProducts = d.products
+    .map((product, index) => ({ ...product, index }))
+    .filter((product) => !q.trim() || `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(q.trim().toLowerCase()))
+    .slice(0, 6);
+  const selectedSizes = stockBySize(p);
+  const selectedStock = selectedSizes.find((x) => x.size === size)?.qty || 0;
   const total = p.price * qty;
+  const chooseProduct = (index) => {
+    const next = d.products[index];
+    const nextSizes = stockBySize(next);
+    const firstAvailable = nextSizes.find((x) => x.qty > 0) || nextSizes[0];
+    setPi(index);
+    setSize(firstAvailable.size);
+    setQty(1);
+  };
+  React.useEffect(() => {
+    if (visibleProducts.length > 0 && !visibleProducts.some((x) => x.index === pi)) {
+      chooseProduct(visibleProducts[0].index);
+    }
+  }, [q]);
+
   return (
     <div>
       <div className="bk-field">
-        <label className="bk-label">เลือกสินค้า</label>
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-          {d.products.slice(0, 5).map((x, i) => (
-            <button key={x.id} className={"bk-chip" + (pi === i ? " is-on" : "")} onClick={() => setPi(i)}>{x.name.length > 16 ? x.name.slice(0, 15) + "…" : x.name}</button>
+        <label className="bk-label">ค้นหาสินค้าจากสต็อก</label>
+        <div className="bk-search" style={{ maxWidth: "none", background: "var(--bg-2)", border: "1px solid transparent", marginBottom: 10 }}>
+          <BKIcon name="search" size={15} />
+          <input placeholder="ค้นหาชื่อสินค้า, SKU, หมวดหมู่…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <div className="bk-stack" style={{ ["--gap"]: "8px", maxHeight: 240, overflow: "auto", paddingRight: 2 }}>
+          {visibleProducts.map((x) => (
+            <button key={x.id} className="bk-row"
+              onClick={() => chooseProduct(x.index)}
+              style={{ width: "100%", textAlign: "left", border: pi === x.index ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: pi === x.index ? "var(--accent-soft)" : "var(--card)", cursor: "pointer" }}>
+              <ProductThumb tint={x.tint} emoji="👶" size={44} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="bk-row__title bk-truncate">{x.name}</div>
+                <div className="bk-row__sub">{x.sku} · {x.category}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="bk-num" style={{ fontWeight: 800 }}>{fmt(x.price)}</div>
+                <Badge tone={x.stock === 0 ? "red" : x.stock <= 5 ? "amber" : "green"} dot>
+                  {x.stock === 0 ? "หมด" : `คงเหลือ ${x.stock}`}
+                </Badge>
+              </div>
+            </button>
           ))}
+          {visibleProducts.length === 0 && <div className="bk-muted" style={{ padding: "10px 2px" }}>ไม่พบสินค้าในสต็อก</div>}
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "end" }}>
         <div className="bk-field" style={{ marginBottom: 0 }}>
-          <label className="bk-label">ไซต์</label>
+          <label className="bk-label">ไซต์และสต็อกย่อย</label>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {d.sizes.slice(1, 6).map((s) => <button key={s} className={"bk-chip" + (size === s ? " is-on" : "")} onClick={() => setSize(s)} style={{ padding: "5px 11px" }}>{s}</button>)}
+            {selectedSizes.map((s) => (
+              <button key={s.size} className={"bk-chip" + (size === s.size ? " is-on" : "")}
+                disabled={s.qty === 0}
+                onClick={() => { setSize(s.size); setQty(1); }}
+                style={{ padding: "5px 11px", opacity: s.qty === 0 ? .45 : 1 }}>
+                {s.size} <span className="bk-num" style={{ opacity: .65 }}>({s.qty})</span>
+              </button>
+            ))}
           </div>
         </div>
         <div className="bk-field" style={{ marginBottom: 0 }}>
@@ -154,15 +208,18 @@ function OrderTool({ onCreate, onDone }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="bk-iconbtn" style={{ width: 32, height: 32 }} onClick={() => setQty((q) => Math.max(1, q - 1))}><BKIcon name="x" size={13} /></button>
             <span className="bk-num" style={{ fontWeight: 700, minWidth: 22, textAlign: "center" }}>{qty}</span>
-            <button className="bk-iconbtn" style={{ width: 32, height: 32 }} onClick={() => setQty((q) => q + 1)}><BKIcon name="plus" size={13} /></button>
+            <button className="bk-iconbtn" style={{ width: 32, height: 32 }} onClick={() => setQty((q) => Math.min(selectedStock || 1, q + 1))}><BKIcon name="plus" size={13} /></button>
           </div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, padding: "12px 14px", borderRadius: "var(--radius-sm)", background: "var(--accent-soft)" }}>
-        <span style={{ color: "var(--accent-strong)", fontWeight: 600 }}>ยอดรวม</span>
-        <span className="bk-num" style={{ fontWeight: 800, fontSize: "1.3rem", color: "var(--accent-strong)" }}>{fmt(total)}</span>
+        <div>
+          <span style={{ color: "var(--accent-strong)", fontWeight: 700 }}>ยอดรวม</span>
+          <div className="bk-row__sub">มีในไซต์ {size} จำนวน {selectedStock} ชิ้น</div>
+        </div>
+        <span className="bk-num" style={{ fontWeight: 800, fontSize: "1.3rem", color: "var(--accent-strong)" }}>{selectedStock > 0 ? fmt(total) : "หมดสต็อก"}</span>
       </div>
-      <button className="bk-btn bk-btn--primary" style={{ width: "100%", justifyContent: "center", marginTop: 12 }} onClick={() => {
+      <button className="bk-btn bk-btn--primary" disabled={selectedStock <= 0} style={{ width: "100%", justifyContent: "center", marginTop: 12 }} onClick={() => {
         const order = onCreate ? onCreate({ product: p, size, qty, total }) : null;
         onDone && onDone(order);
       }}>
