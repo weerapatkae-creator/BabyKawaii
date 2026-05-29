@@ -1252,7 +1252,7 @@ function pollMessages(convId) {
 
 /* ── Open conversation (AJAX — no page reload) ─────────────────── */
 async function openConv(id) {
-    if (id === CONV_ID) return; // already open
+    if (id === CONV_ID_CURRENT) return; // already open
 
     // 1. Update active state in list
     document.querySelectorAll('.conv-item').forEach(el => {
@@ -1288,7 +1288,6 @@ async function openConv(id) {
 
     // 6. Update global state
     CONV_ID_CURRENT = id;
-    window.CONV_ID = id;
     window.CUSTOMER_AVATAR  = info.avatar_url || '';
     window.CUSTOMER_INITIAL = info.initial || '?';
 
@@ -1382,7 +1381,7 @@ window.ACTIVE_CUSTOMER_CURRENT = <?= json_encode($activeConv['customer_name'] ??
 
 /* ── Send reply ─────────────────────────────────────────────────── */
 function sendReply() {
-    if (!CONV_ID) return;
+    if (!CONV_ID_CURRENT) return;
     const txt     = document.getElementById('replyText');
     const btn     = document.getElementById('btnSend');
     const content = txt.value.trim();
@@ -1406,7 +1405,7 @@ function sendReply() {
     el.scrollTop = el.scrollHeight;
 
     fetch('', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({ajax:'send', conv_id: CONV_ID, content})
+        body: new URLSearchParams({ajax:'send', conv_id: CONV_ID_CURRENT, content})
     })
     .then(r => r.json())
     .then(res => {
@@ -1636,7 +1635,7 @@ function flashTitle() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
-if (CONV_ID) loadMessages(CONV_ID);
+if (CONV_ID_CURRENT) loadMessages(CONV_ID_CURRENT);
 startGlobalNotify();
 
 // ── Mobile: dynamic viewport height (fixes iOS Safari URL-bar resize) ──
@@ -1658,7 +1657,7 @@ if (window.innerWidth <= 767) {
 }
 
 // ── Mobile: auto-show chat panel if conv already selected ──────────────
-if (CONV_ID && window.innerWidth <= 767) {
+if (CONV_ID_CURRENT && window.innerWidth <= 767) {
     document.getElementById('inboxWrap').classList.add('mob-chat');
 }
 
@@ -1870,7 +1869,7 @@ function saveOrder() {
 
     fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body: new URLSearchParams({ ajax:'save_order', customer_name:name, customer_phone:phone,
-            customer_addr:addr, note, conv_id: CONV_ID||'', items: JSON.stringify(items) })
+            customer_addr:addr, note, conv_id: CONV_ID_CURRENT||'', items: JSON.stringify(items) })
     })
     .then(r => r.json())
     .then(res => {
