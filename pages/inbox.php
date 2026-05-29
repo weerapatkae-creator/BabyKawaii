@@ -1190,6 +1190,9 @@ document.addEventListener('click', () => {
 function esc(s) {
     return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
+function escAttr(s) { // สำหรับ HTML attribute — ไม่แปลง \n
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 /* ── Render a single message row ───────────────────────────────── */
 function renderMsg(m) {
@@ -2019,10 +2022,18 @@ function renderProduct(p) {
         return `<span class="pf-stock-badge" style="background:${bg};color:${tc};">${esc(s.size)}: ${qty}</span>`;
     }).join('');
 
-    // Build insert text
-    const insertText  = `${p.name} ราคา ฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}`;
-    const stockText   = (p.stocks||[]).filter(s=>s.quantity>0).map(s=>`${s.size}:${s.quantity}`).join(' ') || 'ไม่มีสต็อก';
-    const insertStock = `${p.name}\nราคา ฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}\nสต็อก: ${stockText}`;
+    const price     = parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0});
+    const insertText = `🛍️ ${p.name}\n💰 ราคา ฿${price}`;
+
+    // Size picker buttons (only sizes with stock > 0)
+    const availSizes = (p.stocks||[]).filter(s => parseInt(s.quantity) > 0);
+    const sizePicker = availSizes.map(s => {
+        const msg = `🛍️ ${p.name}\n💰 ราคา ฿${price}\n📦 ไซส์ ${s.size} เหลือ ${s.quantity} ชิ้น`;
+        return `<button class="btn-insert" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"
+            data-msg="${escAttr(msg)}" onclick="fillReply(this.dataset.msg)">
+            ${esc(s.size)} (${s.quantity})
+        </button>`;
+    }).join('');
 
     return `<div class="product-card">
         <div style="display:flex;gap:8px;align-items:flex-start;">
@@ -2030,20 +2041,21 @@ function renderProduct(p) {
             <div style="flex:1;min-width:0;">
                 <div style="font-size:0.8rem;font-weight:700;line-height:1.3;margin-bottom:3px;word-break:break-word;">${esc(p.name)}</div>
                 <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap;">
-                    <span style="font-size:0.85rem;color:var(--pink);font-weight:700;">฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}</span>
+                    <span style="font-size:0.9rem;color:var(--pink);font-weight:700;">฿${price}</span>
                     <span style="font-size:0.65rem;color:${sc};background:${sc}1a;padding:1px 6px;border-radius:8px;font-weight:600;">${sl}</span>
-                    ${p.sku ? `<span style="font-size:0.62rem;color:#bbb;">SKU: ${esc(p.sku)}</span>` : ''}
                 </div>
-                ${badges ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;">${badges}</div>` : '<div style="font-size:0.65rem;color:#ccc;margin-bottom:6px;">ไม่มีข้อมูลสต็อก</div>'}
+                ${badges ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px;">${badges}</div>` : ''}
             </div>
         </div>
-        <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-            <button class="btn-insert" data-msg="${esc(insertText)}" onclick="fillReply(this.dataset.msg)">
+        <div style="margin-top:7px;display:flex;flex-direction:column;gap:5px;">
+            <button class="btn-insert" style="background:#fff0f5;color:#c05a78;border-color:#f0d6de;"
+                data-msg="${escAttr(insertText)}" onclick="fillReply(this.dataset.msg)">
                 <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
             </button>
-            <button class="btn-insert" data-msg="${esc(insertStock)}" onclick="fillReply(this.dataset.msg)">
-                <i class="fas fa-boxes" style="font-size:.6rem;"></i> ส่งสต็อก
-            </button>
+            ${availSizes.length ? `
+            <div style="font-size:0.62rem;color:#aaa;font-weight:600;letter-spacing:.04em;">เลือกไซส์ที่จะส่ง</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">${sizePicker}</div>
+            ` : '<div style="font-size:0.68rem;color:#ccc;">ไม่มีสต็อก</div>'}
         </div>
     </div>`;
 }
