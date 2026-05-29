@@ -25,7 +25,11 @@ if (!function_exists('fetchFbProfile')) {
         $res  = curl_exec($ch);
         curl_close($ch);
         $data = $res ? json_decode($res, true) : [];
-        return [$data['name'] ?? null, $data['profile_pic'] ?? null];
+        // ใช้ Graph API redirect URL แทน CDN URL เพราะ Facebook block hotlinking จาก domain อื่น
+        $avatarUrl = !empty($data['id'])
+            ? "https://graph.facebook.com/{$data['id']}/picture?type=normal"
+            : ($data['profile_pic'] ?? null);
+        return [$data['name'] ?? null, $avatarUrl];
     }
 }
 

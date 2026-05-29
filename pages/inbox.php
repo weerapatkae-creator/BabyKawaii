@@ -129,6 +129,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         exit;
     }
 
+    // ── ค้นสินค้า + สต็อก ────────────────────────────────────────────
+    if ($_POST['ajax'] === 'products_search') {
+        $q     = trim($_POST['q'] ?? '');
+        $qLike = "%$q%";
+        if ($q === '') {
+            $stmt = $pdo->prepare("
+                SELECT p.id,p.name,p.sku,p.selling_price,p.main_image,p.status,
+                       COALESCE(SUM(s.quantity),0) AS total_stock
+                FROM products p LEFT JOIN stock s ON s.product_id=p.id
+                WHERE p.status IN ('active','out_of_stock')
+                GROUP BY p.id
+                ORDER BY p.is_featured DESC, p.status='active' DESC, p.name
+                LIMIT 30
+            ");
+            $stmt->execute();
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT p.id,p.name,p.sku,p.selling_price,p.main_image,p.status,
+                       COALESCE(SUM(s.quantity),0) AS total_stock
+                FROM products p LEFT JOIN stock s ON s.product_id=p.id
+                WHERE (p.name LIKE ? OR p.sku LIKE ? OR p.tags LIKE ?)
+                GROUP BY p.id
+                ORDER BY p.status='active' DESC, p.name
+                LIMIT 20
+            ");
+            $stmt->execute([$qLike,$qLike,$qLike]);
+        }
+        $prods = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($prods) {
+            $ids = implode(',', array_map('intval', array_column($prods,'id')));
+            $stockRows = $pdo->query("
+                SELECT product_id,size,color,quantity,min_alert
+                FROM stock WHERE product_id IN ($ids)
+                ORDER BY product_id,
+                  FIELD(size,'Premature','NB','0-3M','3-6M','6-9M','9-12M','12-18M','18-24M','Free Size')
+            ")->fetchAll(PDO::FETCH_ASSOC);
+            $stockMap = [];
+            foreach ($stockRows as $sr) { $stockMap[$sr['product_id']][] = $sr; }
+            foreach ($prods as &$p) {
+                $p['image_url'] = $p['main_image'] ? (UPLOAD_URL . $p['main_image']) : '';
+                $p['stocks']    = $stockMap[$p['id']] ?? [];
+            }
+        }
+        echo json_encode($prods, JSON_UNESCAPED_UNICODE); exit;
+    }
+
+    // ── ค้นออเดอร์ลูกค้า ─────────────────────────────────────────────
+    if ($_POST['ajax'] === 'customer_orders') {
+        $q = trim($_POST['q'] ?? '');
+        if (!$q) { echo json_encode([]); exit; }
+        $stmt = $pdo->prepare("
+            SELECT o.id,o.order_number,o.customer_name,o.customer_phone,
+                   o.total_amount,o.order_status,o.payment_status,o.order_date,
+                   p.name AS platform_name, p.color AS platform_color,
+                   COUNT(oi.id) AS item_count
+            FROM orders o
+            LEFT JOIN platforms p ON p.id=o.platform_id
+            LEFT JOIN order_items oi ON oi.order_id=o.id
+            WHERE o.customer_name LIKE ? OR o.order_number LIKE ? OR o.customer_phone LIKE ?
+            GROUP BY o.id ORDER BY o.order_date DESC LIMIT 15
+        ");
+        $stmt->execute(["%$q%","%$q%","%$q%"]);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE); exit;
+    }
+
+    // ── สต็อกต่ำ ──────────────────────────────────────────────────────
+    if ($_POST['ajax'] === 'low_stock') {
+        $stmt = $pdo->query("
+            SELECT p.id,p.name,p.sku,p.selling_price,
+                   s.size,s.color,s.quantity,s.min_alert
+            FROM stock s
+            JOIN products p ON p.id=s.product_id
+            WHERE s.quantity <= s.min_alert AND p.status='active'
+            ORDER BY s.quantity ASC, p.name
+            LIMIT 40
+        ");
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE); exit;
+    }
+
     echo json_encode(['ok'=>false]);
     exit;
 }
@@ -175,7 +254,8 @@ if ($search)         { $where[] = '(c.customer_name LIKE ? OR c.last_message LIK
 try {
     $convStmt = $pdo->prepare(
         "SELECT c.*,
-                p.name  AS platform_name,  p.icon  AS platform_icon,  p.color AS platform_color,
+                p.name  AS platform_name,  p.slug  AS platform_slug,
+                p.icon  AS platform_icon,  p.color AS platform_color,
                 pa.name AS account_name,   pa.color AS account_color
          FROM conversations c
          LEFT JOIN platforms        p  ON p.id  = c.platform_id
@@ -191,7 +271,8 @@ try {
 
     // Accounts grouped for filter chips
     $allAccounts  = $pdo->query(
-        "SELECT pa.id, pa.name, pa.color, p.icon AS platform_icon, p.color AS platform_color, p.id AS platform_id
+        "SELECT pa.id, pa.name, pa.color, p.icon AS platform_icon,
+                p.slug AS platform_slug, p.color AS platform_color, p.id AS platform_id
          FROM platform_accounts pa
          JOIN platforms p ON p.id = pa.platform_id
          WHERE pa.is_active=1
@@ -209,7 +290,8 @@ try {
     if ($activeConvId) {
         $s = $pdo->prepare(
             "SELECT c.*,
-                    p.name  AS platform_name, p.icon AS platform_icon, p.color AS platform_color,
+                    p.name  AS platform_name, p.slug  AS platform_slug,
+                    p.icon  AS platform_icon, p.color AS platform_color,
                     pa.name AS account_name,  pa.color AS account_color
              FROM conversations c
              LEFT JOIN platforms         p  ON p.id  = c.platform_id
@@ -225,10 +307,27 @@ try {
     $stats = ['open_count'=>0,'pending_count'=>0,'closed_count'=>0,'unread_convs'=>0];
     $activeConv = null;
 }
+
+// ── Platform FA icon helper ────────────────────────────────────────
+$_PF_FA = [
+    'facebook'  => 'fab fa-facebook-f',
+    'instagram' => 'fab fa-instagram',
+    'tiktok'    => 'fab fa-tiktok',
+    'line'      => 'fab fa-line',
+    'twitter'   => 'fab fa-x-twitter',
+    'youtube'   => 'fab fa-youtube',
+    'shopee'    => 'fas fa-shopping-bag',
+    'lazada'    => 'fas fa-store',
+];
+function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'): string {
+    global $_PF_FA;
+    $fa = $_PF_FA[strtolower($slug)] ?? 'fas fa-store';
+    return '<i class="' . $fa . '" style="font-size:' . $size . ';color:' . $color . ';line-height:1;"></i>';
+}
 ?>
 
 <style>
-.inbox-wrap { display:flex; height:calc(100vh - 130px); gap:0; overflow:hidden; border-radius:12px; border:1px solid var(--border-color); background:#fff; }
+.inbox-wrap { display:flex; height:calc(100vh - 165px); gap:0; overflow:hidden; border-radius:12px; border:1px solid var(--border-color); background:var(--card); }
 
 /* Left panel */
 .inbox-list { width:300px; min-width:260px; flex-shrink:0; border-right:1px solid var(--border-color); display:flex; flex-direction:column; }
@@ -308,28 +407,171 @@ try {
 .msg-row    { animation: msgIn 0.18s ease-out; }
 .msg-system { animation: msgIn 0.15s ease-out; }
 
-@media(max-width:768px){
-    .inbox-list { width:100%; position:absolute; z-index:5; }
-    .inbox-list.hide-mobile { display:none; }
+/* ── MOBILE (≤ 767px) ───────────────────────────────────────── */
+@media(max-width:767px){
+
+    /* ── inbox-wrap: full-bleed, dynamic height ─────────────── */
+    #inboxApp { padding:8px 12px 0 !important; }
+    #inboxApp .bk-page__head { margin-bottom:10px !important; flex-wrap:nowrap !important; overflow-x:auto; scrollbar-width:none; }
+    #inboxApp .bk-page__head::-webkit-scrollbar { display:none; }
+    #inboxApp .bk-page__title { font-size:0.95rem !important; white-space:nowrap; }
+
+    .inbox-wrap {
+        height: calc(var(--mob-h, 100vh) - 130px) !important;
+        margin:0 !important;
+        border-radius:0 !important;
+        border-left:none !important;
+        border-right:none !important;
+        border-bottom:none !important;
+        position:relative;
+        overflow:hidden;
+    }
+
+    /* ── List panel: full-screen layer ─────────────────────── */
+    .inbox-list {
+        width:100% !important;
+        min-width:100% !important;
+        border-right:none !important;
+        position:absolute !important;
+        inset:0;
+        z-index:2;
+        background:#fff;
+        transition:transform .25s ease;
+    }
+
+    /* ── Chat panel: off-screen right by default ────────────── */
+    .inbox-chat {
+        position:absolute !important;
+        inset:0;
+        z-index:3;
+        transform:translateX(102%);
+        transition:transform .25s ease;
+        background:#f8f8f8;
+    }
+
+    /* ── mob-chat: slide list out, slide chat in ────────────── */
+    .inbox-wrap.mob-chat .inbox-list { transform:translateX(-30%); pointer-events:none; }
+    .inbox-wrap.mob-chat .inbox-chat { transform:translateX(0); }
+
+    /* ── Tools panel: bottom sheet on mobile ───────────────── */
+    #btnTools { display:inline-flex !important; }
+
+    .inbox-tools {
+        display:flex !important;
+        position:fixed !important;
+        bottom:0; left:0; right:0;
+        width:100% !important;
+        min-width:100% !important;
+        max-height:72vh;
+        height:72vh;
+        border-left:none !important;
+        border-top:1px solid var(--border-color) !important;
+        border-radius:18px 18px 0 0 !important;
+        box-shadow:0 -4px 24px rgba(0,0,0,.18);
+        z-index:1050;
+        transform:translateY(110%);
+        transition:transform .28s cubic-bezier(.4,0,.2,1);
+        overflow:hidden;
+    }
+    .inbox-tools.open { transform:translateY(0); }
+
+    /* drag handle */
+    .tools-head::before {
+        content:'';
+        display:block;
+        width:36px; height:4px;
+        background:#ddd;
+        border-radius:2px;
+        margin:0 auto 8px;
+    }
+    .tools-head { flex-direction:column; padding-top:10px !important; }
+
+    /* backdrop */
+    #toolsBackdrop {
+        display:none;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.4);
+        z-index:1049;
+        backdrop-filter:blur(1px);
+    }
+    #toolsBackdrop.show { display:block; }
+
+    /* ── Chat header: compact ───────────────────────────────── */
+    .chat-head { padding:8px 10px !important; gap:6px !important; }
+    .chat-head-meta .text-muted { display:none !important; } /* ซ่อน UID */
+    .chat-head-meta { gap:4px !important; }
+
+    /* ── QR chips: horizontal scroll ────────────────────────── */
+    .qr-chips {
+        flex-wrap:nowrap !important;
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+        padding-bottom:3px;
+        scrollbar-width:none;
+        mask-image:linear-gradient(to right,transparent,#000 10%,#000 90%,transparent);
+    }
+    .qr-chips::-webkit-scrollbar { display:none; }
+
+    /* ── Account filter chips: horizontal scroll ────────────── */
+    .inbox-list-head .d-flex.gap-1 {
+        flex-wrap:nowrap !important;
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+        padding-bottom:3px;
+        scrollbar-width:none;
+    }
+    .inbox-list-head .d-flex.gap-1::-webkit-scrollbar { display:none; }
+
+    /* ── Reply box: tighter padding ─────────────────────────── */
+    .chat-reply { padding:8px 10px !important; }
+
+    /* ── Status tabs: smaller text ──────────────────────────── */
+    .status-tab { font-size:0.72rem !important; padding:6px 2px !important; }
 }
+
+/* ── Tools Panel ────────────────────────────────────────────────── */
+.inbox-tools { width:0; min-width:0; overflow:hidden; border-left:1px solid transparent; background:#fff; display:flex; flex-direction:column; transition:width .22s ease,min-width .22s ease; flex-shrink:0; }
+.inbox-tools.open { width:290px; min-width:270px; border-left-color:var(--border-color); }
+.tools-head { padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; white-space:nowrap; }
+.tools-tabs { display:flex; border-bottom:1px solid var(--border-color); flex-shrink:0; white-space:nowrap; }
+.tools-tab { flex:1; text-align:center; padding:7px 4px; font-size:0.72rem; cursor:pointer; border-bottom:2px solid transparent; color:#888; transition:color .12s; user-select:none; }
+.tools-tab.active { color:var(--pink); border-bottom-color:var(--pink); font-weight:700; }
+.tools-pane { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; min-height:0; overflow-x:hidden; }
+.tools-search-box { padding:8px 10px; border-bottom:1px solid #f0f0f0; position:sticky; top:0; background:#fff; z-index:2; flex-shrink:0; }
+.tools-search-box input { width:100%; border:1px solid var(--border-color); border-radius:8px; padding:6px 10px; font-size:0.78rem; font-family:inherit; }
+.tools-search-box input:focus { outline:none; border-color:var(--pink); box-shadow:0 0 0 2px #ffd6e833; }
+.tools-hint { padding:20px 14px; text-align:center; color:#bbb; font-size:0.78rem; }
+.product-card { padding:10px 12px; border-bottom:1px solid #f5f5f5; cursor:default; transition:background .1s; }
+.product-card:hover { background:#fdfafc; }
+.pf-stock-badge { padding:2px 6px; border-radius:10px; font-size:0.62rem; font-weight:700; white-space:nowrap; }
+.btn-insert { background:#f2f0f8; border:1px solid #ddd; border-radius:12px; padding:3px 9px; font-size:0.68rem; cursor:pointer; white-space:nowrap; transition:all .12s; color:#555; }
+.btn-insert:hover { background:var(--pink); color:#fff; border-color:var(--pink); }
+.order-card { padding:10px 12px; border-bottom:1px solid #f5f5f5; }
+.order-card:hover { background:#fafafa; }
+.ls-bar-wrap { background:#eee; border-radius:4px; height:5px; flex:1; overflow:hidden; }
+.ls-bar-fill { height:100%; border-radius:4px; transition:width .3s; }
+#btnTools.active { background:var(--pink); color:#fff; border-color:var(--pink); }
 </style>
 
-<div class="container-fluid fade-in px-0" id="inboxApp">
+<div class="bk-page fade-in" style="padding-bottom:0" id="inboxApp">
     <!-- Header bar -->
-    <div class="d-flex gap-2 px-3 pt-3 pb-2 flex-wrap align-items-center">
-        <h1 class="page-title mb-0">💬 Inbox</h1>
-        <div class="d-flex gap-2 ms-auto flex-wrap align-items-center">
-            <?php if (($stats['new_count'] ?? 0) > 0): ?>
-            <span class="badge bg-danger" id="globalNewBadge">💬 ใหม่ <?= $stats['new_count'] ?></span>
-            <?php else: ?>
-            <span class="badge bg-danger d-none" id="globalNewBadge">💬 ใหม่ 0</span>
-            <?php endif; ?>
-            <span class="badge bg-success" id="globalOpenBadge">🟢 เปิด <?= $stats['open_count'] ?? 0 ?></span>
-            <button class="btn btn-sm btn-outline-secondary" onclick="openQrManager()">⚡ ข้อความสำเร็จรูป</button>
+    <div class="bk-page__head" style="margin-bottom:16px">
+        <div>
+            <h1 class="bk-page__title">Inbox ข้อความ</h1>
+            <div class="bk-page__sub">รวมแชตจากทุกช่องทาง · ยังไม่ได้อ่าน <span id="globalNewBadge"><?= $stats['new_count'] ?? 0 ?></span> ข้อความ</div>
+        </div>
+        <div class="bk-actions">
+            <span class="badge-status badge-active" id="globalOpenBadge">เปิด <?= $stats['open_count'] ?? 0 ?></span>
+            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="openQrManager()"><i class="fas fa-bolt" style="font-size:.8rem"></i> ข้อความสำเร็จรูป</button>
+            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" id="btnTools" title="เครื่องมือ">
+                <i class="fas fa-toolbox" style="font-size:.8rem"></i> เครื่องมือ
+            </button>
         </div>
     </div>
 
-    <div class="inbox-wrap mx-3 mb-3" id="inboxWrap">
+    <div class="inbox-wrap mx-0 mb-0" id="inboxWrap" style="border-radius:var(--radius);border:1px solid var(--border)"
+>
 
         <!-- LEFT: conversation list -->
         <div class="inbox-list" id="inboxList">
@@ -343,9 +585,12 @@ try {
                         $base        = $acc['color'] ?: $acc['platform_color'] ?: '#888';
                     ?>
                     <a href="?status=<?= $statusFilter ?>&account=<?= $acc['id'] ?><?= $activeConvId?'&conv='.$activeConvId:'' ?>"
-                       class="badge text-decoration-none"
+                       class="badge text-decoration-none d-inline-flex align-items-center gap-1"
                        style="background:<?= $isActiveAcc ? $base : '#eee' ?>;color:<?= $isActiveAcc ? '#fff' : '#555' ?>;font-weight:<?= $isActiveAcc?'700':'400' ?>;">
-                        <?= $acc['platform_icon'] ?> <?= htmlspecialchars($acc['name']) ?>
+                        <?php if ($acc['platform_slug'] ?? ''): ?>
+                        <?= pfIcon($acc['platform_slug'], $isActiveAcc ? '#fff' : ($acc['platform_color'] ?? '#888'), '0.72rem') ?>
+                        <?php endif; ?>
+                        <?= htmlspecialchars($acc['name']) ?>
                     </a>
                     <?php endforeach; ?>
                     <?php if ($accountFilter || $platformFilter): ?>
@@ -393,18 +638,32 @@ try {
                 <div class="conv-item <?= $isActive?'active':'' ?> <?= $hasUnread?'unread':'' ?>"
                      data-conv="<?= $conv['id'] ?>"
                      onclick="openConv(<?= $conv['id'] ?>)">
-                    <div class="conv-avatar"
-                         style="<?= $conv['platform_color'] && !$conv['customer_avatar'] ? 'background:linear-gradient(135deg,'.$conv['platform_color'].','.adjustColor($conv['platform_color']).');' : '' ?>">
-                        <?php if ($conv['customer_avatar']): ?>
-                            <img src="<?= htmlspecialchars($conv['customer_avatar']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                    <div class="conv-avatar" style="position:relative;<?= $conv['platform_color'] && !$conv['customer_avatar'] ? 'background:linear-gradient(135deg,'.$conv['platform_color'].','.adjustColor($conv['platform_color']).');' : '' ?>">
+                        <?php if ($conv['customer_avatar']):
+                            $slug = $conv['platform_slug'] ?? '';
+                            $avatarSrc = in_array($slug, ['facebook','instagram'])
+                                ? SITE_URL . '/api/avatar-proxy.php?conv_id=' . (int)$conv['id']
+                                : $conv['customer_avatar'];
+                        ?>
+                            <img src="<?= htmlspecialchars($avatarSrc) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;"><?= htmlspecialchars($initial) ?></span>
                         <?php else: ?>
                             <?= htmlspecialchars($initial) ?>
+                        <?php endif; ?>
+                        <?php if ($conv['platform_slug'] ?? ''): ?>
+                        <span style="position:absolute;bottom:-3px;right:-3px;width:15px;height:15px;border-radius:50%;background:<?= $conv['platform_color'] ?? '#888' ?>;border:1.5px solid #fff;display:flex;align-items:center;justify-content:center;z-index:1;">
+                            <?= pfIcon($conv['platform_slug'], '#fff', '0.46rem') ?>
+                        </span>
                         <?php endif; ?>
                     </div>
                     <div class="conv-body">
                         <div class="d-flex justify-content-between align-items-start gap-1">
                             <div class="conv-name">
-                                <?php if ($conv['platform_color']): ?>
+                                <?php if ($conv['platform_slug'] ?? ''): ?>
+                                <span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:<?= $conv['platform_color'] ?? '#888' ?>;margin-right:3px;vertical-align:middle;flex-shrink:0;">
+                                    <?= pfIcon($conv['platform_slug'], '#fff', '0.48rem') ?>
+                                </span>
+                                <?php elseif ($conv['platform_color']): ?>
                                 <span class="platform-dot" style="background:<?= $conv['platform_color'] ?>;"></span>
                                 <?php endif; ?>
                                 <?= htmlspecialchars($conv['customer_name'] ?: 'ไม่ระบุชื่อ') ?>
@@ -418,11 +677,12 @@ try {
                             <span class="conv-time"><?= $timeAgoStr ?></span>
                             <span style="font-size:0.67rem;">
                                 <?php if ($conv['account_name'] ?? ''): ?>
-                                <span style="background:<?= $conv['account_color'] ?? $conv['platform_color'] ?? '#888' ?>;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.62rem;">
-                                    <?= $conv['platform_icon'] ?? '' ?> <?= htmlspecialchars($conv['account_name']) ?>
+                                <span style="background:<?= $conv['account_color'] ?? $conv['platform_color'] ?? '#888' ?>;color:#fff;padding:1px 5px;border-radius:8px;font-size:0.62rem;display:inline-flex;align-items:center;gap:3px;">
+                                    <?php if ($conv['platform_slug'] ?? ''): ?><?= pfIcon($conv['platform_slug'], '#fff', '0.58rem') ?><?php endif; ?>
+                                    <?= htmlspecialchars($conv['account_name']) ?>
                                 </span>
-                                <?php else: ?>
-                                <span style="color:#bbb;"><?= $conv['platform_icon'] ?? '' ?></span>
+                                <?php elseif ($conv['platform_slug'] ?? ''): ?>
+                                <span><?= pfIcon($conv['platform_slug'], $conv['platform_color'] ?? '#bbb', '0.78rem') ?></span>
                                 <?php endif; ?>
                             </span>
                         </div>
@@ -437,11 +697,19 @@ try {
             <?php if ($activeConv): ?>
             <!-- Chat header -->
             <div class="chat-head">
-                <button class="btn btn-sm btn-outline-secondary d-md-none me-1" onclick="toggleList()">☰</button>
+                <button class="btn btn-sm btn-outline-secondary d-md-none me-1" onclick="backToList()" style="padding:5px 10px;font-size:0.8rem;">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
                 <div class="conv-avatar" style="width:38px;height:38px;font-size:0.9rem;overflow:hidden;
                     <?= $activeConv['customer_avatar'] ? '' : ($activeConv['platform_color']?'background:linear-gradient(135deg,'.$activeConv['platform_color'].','.adjustColor($activeConv['platform_color']).');':'') ?>">
-                    <?php if ($activeConv['customer_avatar']): ?>
-                        <img src="<?= htmlspecialchars($activeConv['customer_avatar']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                    <?php if ($activeConv['customer_avatar']):
+                        $activeSlug = $activeConv['platform_slug'] ?? '';
+                        $activeAvatarSrc = in_array($activeSlug, ['facebook','instagram'])
+                            ? SITE_URL . '/api/avatar-proxy.php?conv_id=' . (int)$activeConvId
+                            : $activeConv['customer_avatar'];
+                    ?>
+                        <img src="<?= htmlspecialchars($activeAvatarSrc) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;"><?= mb_substr($activeConv['customer_name'] ?: '?', 0, 1) ?></span>
                     <?php else: ?>
                         <?= mb_substr($activeConv['customer_name'] ?: '?', 0, 1) ?>
                     <?php endif; ?>
@@ -452,9 +720,10 @@ try {
                         <?= htmlspecialchars($activeConv['customer_name'] ?: 'ไม่ระบุชื่อ') ?>
                     </div>
                     <div class="chat-head-meta d-flex align-items-center gap-2 flex-wrap">
-                        <?php if ($activeConv['platform_icon']): ?>
-                        <span style="background:<?= $activeConv['platform_color'] ?>;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.68rem;">
-                            <?= $activeConv['platform_icon'] ?> <?= htmlspecialchars($activeConv['platform_name']) ?>
+                        <?php if ($activeConv['platform_name'] ?? ''): ?>
+                        <span style="background:<?= $activeConv['platform_color'] ?>;color:#fff;padding:3px 9px;border-radius:10px;font-size:0.68rem;display:inline-flex;align-items:center;gap:5px;">
+                            <?php if ($activeConv['platform_slug'] ?? ''): ?><?= pfIcon($activeConv['platform_slug'], '#fff', '0.76rem') ?><?php endif; ?>
+                            <?= htmlspecialchars($activeConv['platform_name']) ?>
                         </span>
                         <?php endif; ?>
                         <?php if ($activeConv['account_name'] ?? ''): ?>
@@ -490,13 +759,13 @@ try {
 
             <!-- Reply box -->
             <div class="chat-reply">
-                <?php if (!empty($quickReplies)): ?>
                 <div class="qr-chips" id="qrChips">
                     <?php foreach ($quickReplies as $qr): ?>
-                    <span class="qr-chip" onclick="useQR(<?= htmlspecialchars(json_encode($qr['content'])) ?>)"><?= htmlspecialchars($qr['label']) ?></span>
+                    <span class="qr-chip"
+                          data-content="<?= htmlspecialchars($qr['content'], ENT_QUOTES) ?>"
+                          onclick="useQR(this.dataset.content)"><?= htmlspecialchars($qr['label']) ?></span>
                     <?php endforeach; ?>
                 </div>
-                <?php endif; ?>
                 <div class="reply-input-row">
                     <textarea id="replyText" class="reply-textarea" placeholder="พิมพ์ข้อความ... (Enter = ส่ง, Shift+Enter = ขึ้นบรรทัด)" rows="1"
                               onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply();}"
@@ -516,9 +785,68 @@ try {
                 <?php endif; ?>
             </div>
             <?php endif; ?>
-        </div>
-    </div>
-</div>
+        </div><!-- /inbox-chat -->
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- RIGHT: Tools Panel                                     -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <div class="inbox-tools" id="toolsPanel">
+
+            <!-- Header -->
+            <div class="tools-head">
+                <span style="font-weight:700;font-size:0.85rem;">🛠️ เครื่องมือแอดมิน</span>
+                <button onclick="toggleTools()" style="background:none;border:none;cursor:pointer;color:#aaa;font-size:0.88rem;padding:2px 4px;line-height:1;" title="ปิด">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tools-tabs">
+                <div class="tools-tab active" onclick="switchToolsTab('products')" id="ttab-products">🔍 สินค้า</div>
+                <div class="tools-tab" onclick="switchToolsTab('orders')"   id="ttab-orders">📋 ออเดอร์</div>
+                <div class="tools-tab" onclick="switchToolsTab('lowstock')" id="ttab-lowstock">⚠️ ต่ำ</div>
+            </div>
+
+            <!-- Tab: Products -->
+            <div class="tools-pane" id="tpane-products">
+                <div class="tools-search-box">
+                    <input type="text" id="productSearch"
+                           placeholder="🔍 ชื่อสินค้า / SKU..."
+                           oninput="debounceProductSearch(this.value)"
+                           autocomplete="off">
+                </div>
+                <div id="productResults">
+                    <div class="tools-hint">พิมพ์ชื่อสินค้าเพื่อค้นหา<br><span style="font-size:0.72rem;color:#ccc;">หรือเว้นว่างเพื่อดูทั้งหมด</span></div>
+                </div>
+            </div>
+
+            <!-- Tab: Orders -->
+            <div class="tools-pane" id="tpane-orders" style="display:none;">
+                <div class="tools-search-box">
+                    <input type="text" id="orderSearch"
+                           placeholder="🔍 ชื่อลูกค้า / เลขออเดอร์..."
+                           oninput="debounceOrderSearch(this.value)"
+                           autocomplete="off">
+                </div>
+                <div id="orderResults">
+                    <div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>
+                </div>
+            </div>
+
+            <!-- Tab: Low Stock -->
+            <div class="tools-pane" id="tpane-lowstock" style="display:none;">
+                <div id="lowStockResults">
+                    <div class="tools-hint">คลิกแท็บ ⚠️ เพื่อโหลด</div>
+                </div>
+            </div>
+
+        </div><!-- /inbox-tools -->
+
+    </div><!-- /inbox-wrap -->
+</div><!-- /inboxApp -->
+
+<!-- Mobile tools backdrop -->
+<div id="toolsBackdrop" onclick="toggleTools()"></div>
 
 <!-- Quick Reply Manager Modal -->
 <div class="modal fade" id="qrModal" tabindex="-1">
@@ -554,7 +882,14 @@ try {
 <script>
 const CONV_ID          = <?= $activeConvId ?: 'null' ?>;
 const SITE_URL         = '<?= SITE_URL ?>';
-const CUSTOMER_AVATAR  = <?= json_encode($activeConv['customer_avatar'] ?? '') ?>;
+const CUSTOMER_AVATAR  = <?php
+    $slug = $activeConv['platform_slug'] ?? '';
+    if (!empty($activeConv['customer_avatar']) && in_array($slug, ['facebook','instagram'])) {
+        echo json_encode(SITE_URL . '/api/avatar-proxy.php?conv_id=' . (int)$activeConvId);
+    } else {
+        echo json_encode($activeConv['customer_avatar'] ?? '');
+    }
+?>;
 const CUSTOMER_INITIAL = <?= json_encode(mb_substr($activeConv['customer_name'] ?? '?', 0, 1)) ?>;
 let   lastMsgId       = 0;
 let   pollTimer       = null;
@@ -599,7 +934,7 @@ function renderMsg(m) {
 
     // avatar
     const custAv = CUSTOMER_AVATAR
-        ? `<div class="msg-avatar"><img src="${esc(CUSTOMER_AVATAR)}" alt="${esc(CUSTOMER_INITIAL)}"></div>`
+        ? `<div class="msg-avatar"><img src="${esc(CUSTOMER_AVATAR)}" alt="${esc(CUSTOMER_INITIAL)}" onerror="this.style.display='none';this.parentElement.innerHTML='${esc(CUSTOMER_INITIAL)}';"></div>`
         : `<div class="msg-avatar">${esc(CUSTOMER_INITIAL)}</div>`;
     const adminAv = `<div class="msg-avatar" style="background:linear-gradient(135deg,#FF85A2,#E8547A);">A</div>`;
     const avatar  = dir === 'inbound' ? custAv : adminAv;
@@ -809,12 +1144,24 @@ function refreshQRChips() {
     })
     .then(r => r.json())
     .then(qrs => {
-        const chips = document.getElementById('qrChips');
-        if (!chips) return;
+        // หา #qrChips — ถ้าไม่มี (ตอน load หน้ายังไม่มี QR เลย) ให้สร้างใหม่
+        let chips = document.getElementById('qrChips');
+        if (!chips) {
+            const replyBox = document.querySelector('.chat-reply');
+            if (!replyBox) return;
+            chips = document.createElement('div');
+            chips.id        = 'qrChips';
+            chips.className = 'qr-chips';
+            replyBox.insertBefore(chips, replyBox.firstChild);
+        }
         if (!qrs.length) { chips.innerHTML = ''; return; }
-        chips.innerHTML = qrs.map(q =>
-            `<span class="qr-chip" onclick="useQR(${JSON.stringify(q.content)})">${esc(q.label)}</span>`
-        ).join('');
+        // ใช้ data-content แทน JSON ใน onclick → ปลอดภัยกว่า ไม่มีปัญหา quote
+        chips.innerHTML = qrs.map(q => {
+            const safe = String(q.content || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;');
+            return `<span class="qr-chip" data-content="${safe}" onclick="useQR(this.dataset.content)">${esc(q.label)}</span>`;
+        }).join('');
     })
     .catch(() => {});
 }
@@ -835,10 +1182,11 @@ function autoResize(el) {
     el.style.height = Math.min(el.scrollHeight, 110) + 'px';
 }
 
-/* ── Toggle list on mobile ──────────────────────────────────────── */
-function toggleList() {
-    document.getElementById('inboxList').classList.toggle('hide-mobile');
+/* ── Mobile panel switching ──────────────────────────────────────── */
+function backToList() {
+    document.getElementById('inboxWrap').classList.remove('mob-chat');
 }
+function toggleList() { backToList(); } // legacy alias
 
 /* ── Global Notify: real-time sound + badge + conv list ─────────── */
 // globalLastId ถูก init จาก PHP (max message ID ตอน load) — อยู่บนสุดของ <script>
@@ -934,7 +1282,277 @@ function flashTitle() {
 
 // ── Init ──────────────────────────────────────────────────────────
 if (CONV_ID) loadMessages(CONV_ID);
-startGlobalNotify(); // real-time sound + badge + conv list updates
+startGlobalNotify();
+
+// ── Mobile: dynamic viewport height (fixes iOS Safari URL-bar resize) ──
+(function() {
+    function setMobH() {
+        document.documentElement.style.setProperty('--mob-h', window.innerHeight + 'px');
+    }
+    setMobH();
+    window.addEventListener('resize', setMobH);
+})();
+
+// ── Mobile: portal — move toolsPanel to <body> so position:fixed escapes overflow:hidden ──
+// (Desktop keeps it inside flex container for sidebar behaviour)
+if (window.innerWidth <= 767) {
+    const panel   = document.getElementById('toolsPanel');
+    const backdrop = document.getElementById('toolsBackdrop');
+    if (panel)    document.body.appendChild(panel);
+    if (backdrop) document.body.appendChild(backdrop);
+}
+
+// ── Mobile: auto-show chat panel if conv already selected ──────────────
+if (CONV_ID && window.innerWidth <= 767) {
+    document.getElementById('inboxWrap').classList.add('mob-chat');
+}
+
+// ── Mobile: open conv → switch to chat panel without full page reload ──
+(function() {
+    const origOpenConv = window.openConv;
+    window.openConv = function(id) {
+        if (window.innerWidth <= 767) {
+            // On mobile: navigate (page reload) — mob-chat auto-applied on load
+            window.location.href = `?status=<?= $statusFilter ?>&conv=${id}<?= $platformFilter?'&platform='.$platformFilter:'' ?><?= $accountFilter?'&account='.$accountFilter:'' ?>`;
+        } else {
+            origOpenConv(id);
+        }
+    };
+})();
+
+/* ══════════════════════════════════════════════════════════════════
+   TOOLS PANEL
+   ══════════════════════════════════════════════════════════════════ */
+
+const ACTIVE_CUSTOMER = <?= json_encode($activeConv['customer_name'] ?? '') ?>;
+const UPLOAD_URL      = SITE_URL + '/assets/uploads/';
+let _toolsOpen        = false;
+let _curTab           = 'products';
+let _prodTimer        = null;
+let _orderTimer       = null;
+let _lowLoaded        = false;
+
+/* ── Toggle panel ─────────────────────────────────────────────── */
+function toggleTools() {
+    const panel    = document.getElementById('toolsPanel');
+    const btn      = document.getElementById('btnTools');
+    const backdrop = document.getElementById('toolsBackdrop');
+    const isMobile = window.innerWidth <= 767;
+
+    _toolsOpen = !_toolsOpen;
+    panel.classList.toggle('open', _toolsOpen);
+    btn.classList.toggle('active', _toolsOpen);
+
+    // backdrop (mobile bottom-sheet only)
+    if (backdrop) backdrop.classList.toggle('show', _toolsOpen && isMobile);
+
+    // prevent body scroll when bottom sheet open on mobile
+    if (isMobile) document.body.style.overflow = _toolsOpen ? 'hidden' : '';
+
+    if (_toolsOpen) {
+        if (_curTab === 'products') {
+            const inp = document.getElementById('productSearch');
+            searchProducts(inp ? inp.value : '');
+            setTimeout(() => inp && inp.focus(), isMobile ? 350 : 220);
+        } else if (_curTab === 'orders' && ACTIVE_CUSTOMER) {
+            const inp = document.getElementById('orderSearch');
+            if (inp && !inp.value) { inp.value = ACTIVE_CUSTOMER; searchOrders(ACTIVE_CUSTOMER); }
+        } else if (_curTab === 'lowstock' && !_lowLoaded) {
+            loadLowStock();
+        }
+    }
+}
+
+/* ── Switch tabs ──────────────────────────────────────────────── */
+function switchToolsTab(tab) {
+    _curTab = tab;
+    ['products','orders','lowstock'].forEach(t => {
+        document.getElementById('ttab-' + t).classList.toggle('active', t === tab);
+        document.getElementById('tpane-' + t).style.display = t === tab ? 'flex' : 'none';
+    });
+    if (tab === 'products') {
+        const inp = document.getElementById('productSearch');
+        searchProducts(inp ? inp.value : '');
+        setTimeout(() => inp && inp.focus(), 100);
+    }
+    if (tab === 'orders') {
+        const inp = document.getElementById('orderSearch');
+        if (ACTIVE_CUSTOMER && inp && !inp.value) {
+            inp.value = ACTIVE_CUSTOMER;
+            searchOrders(ACTIVE_CUSTOMER);
+        } else if (inp && inp.value) {
+            searchOrders(inp.value);
+        }
+        setTimeout(() => inp && inp.focus(), 100);
+    }
+    if (tab === 'lowstock' && !_lowLoaded) loadLowStock();
+}
+
+/* ── Products ─────────────────────────────────────────────────── */
+function debounceProductSearch(q) {
+    clearTimeout(_prodTimer);
+    _prodTimer = setTimeout(() => searchProducts(q), 320);
+}
+
+function searchProducts(q) {
+    const el = document.getElementById('productResults');
+    el.innerHTML = '<div class="tools-hint" style="padding:10px;"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
+    fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'products_search', q})
+    })
+    .then(r => r.json())
+    .then(list => {
+        if (!list.length) { el.innerHTML = '<div class="tools-hint">ไม่พบสินค้า</div>'; return; }
+        el.innerHTML = list.map(renderProduct).join('');
+    })
+    .catch(() => { el.innerHTML = '<div class="tools-hint" style="color:#e74c3c;">โหลดไม่ได้</div>'; });
+}
+
+function renderProduct(p) {
+    const sColors = { active:'#27ae60', inactive:'#95a5a6', out_of_stock:'#e74c3c' };
+    const sLabels = { active:'มีสินค้า', inactive:'ปิด', out_of_stock:'หมด' };
+    const sc = sColors[p.status] || '#888';
+    const sl = sLabels[p.status] || p.status;
+
+    const img = p.image_url
+        ? `<img src="${esc(p.image_url)}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1px solid #eee;">`
+        : `<div style="width:46px;height:46px;border-radius:8px;background:#f5f0f8;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem;">🧸</div>`;
+
+    // Stock badges per size
+    const badges = (p.stocks || []).map(s => {
+        const qty   = parseInt(s.quantity);
+        const alert = parseInt(s.min_alert);
+        const bg    = qty === 0 ? '#f0f0f0' : qty <= alert ? '#fff3cd' : '#d4edda';
+        const tc    = qty === 0 ? '#aaa'    : qty <= alert ? '#856404' : '#155724';
+        return `<span class="pf-stock-badge" style="background:${bg};color:${tc};">${esc(s.size)}: ${qty}</span>`;
+    }).join('');
+
+    // Build insert text
+    const insertText  = `${p.name} ราคา ฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}`;
+    const stockText   = (p.stocks||[]).filter(s=>s.quantity>0).map(s=>`${s.size}:${s.quantity}`).join(' ') || 'ไม่มีสต็อก';
+    const insertStock = `${p.name}\nราคา ฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}\nสต็อก: ${stockText}`;
+
+    return `<div class="product-card">
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+            ${img}
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8rem;font-weight:700;line-height:1.3;margin-bottom:3px;word-break:break-word;">${esc(p.name)}</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap;">
+                    <span style="font-size:0.85rem;color:var(--pink);font-weight:700;">฿${parseFloat(p.selling_price).toLocaleString('th-TH',{maximumFractionDigits:0})}</span>
+                    <span style="font-size:0.65rem;color:${sc};background:${sc}1a;padding:1px 6px;border-radius:8px;font-weight:600;">${sl}</span>
+                    ${p.sku ? `<span style="font-size:0.62rem;color:#bbb;">SKU: ${esc(p.sku)}</span>` : ''}
+                </div>
+                ${badges ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;">${badges}</div>` : '<div style="font-size:0.65rem;color:#ccc;margin-bottom:6px;">ไม่มีข้อมูลสต็อก</div>'}
+            </div>
+        </div>
+        <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
+            <button class="btn-insert" onclick="insertToReply(${JSON.stringify(insertText)})">
+                <i class="fas fa-tag" style="font-size:.6rem;"></i> ส่งราคา
+            </button>
+            <button class="btn-insert" onclick="insertToReply(${JSON.stringify(insertStock)})">
+                <i class="fas fa-boxes" style="font-size:.6rem;"></i> ส่งสต็อก
+            </button>
+        </div>
+    </div>`;
+}
+
+/* ── Orders ───────────────────────────────────────────────────── */
+function debounceOrderSearch(q) {
+    clearTimeout(_orderTimer);
+    _orderTimer = setTimeout(() => searchOrders(q), 350);
+}
+
+function searchOrders(q) {
+    const el = document.getElementById('orderResults');
+    if (!q.trim()) { el.innerHTML = '<div class="tools-hint">พิมพ์ชื่อลูกค้าหรือเลขออเดอร์</div>'; return; }
+    el.innerHTML = '<div class="tools-hint" style="padding:10px;"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
+    fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'customer_orders', q})
+    })
+    .then(r => r.json())
+    .then(list => {
+        if (!list.length) { el.innerHTML = '<div class="tools-hint">ไม่พบออเดอร์</div>'; return; }
+        el.innerHTML = list.map(renderOrder).join('');
+    })
+    .catch(() => { el.innerHTML = '<div class="tools-hint" style="color:#e74c3c;">โหลดไม่ได้</div>'; });
+}
+
+function renderOrder(o) {
+    const statusMap = {
+        AWAITING_PAYMENT:'รอชำระ', AWAITING_SHIPMENT:'รอส่ง', SHIPPED:'จัดส่งแล้ว',
+        DELIVERED:'ได้รับแล้ว', CANCELLED:'ยกเลิก', pending:'รอดำเนินการ',
+        processing:'กำลังดำเนินการ', shipped:'จัดส่งแล้ว', delivered:'ได้รับแล้ว',
+        cancelled:'ยกเลิก', completed:'เสร็จสิ้น',
+    };
+    const statusClr = { cancelled:'#e74c3c', delivered:'#27ae60', completed:'#27ae60', DELIVERED:'#27ae60', CANCELLED:'#e74c3c' };
+    const sc = statusClr[o.order_status] || '#e67e22';
+    const sl = statusMap[o.order_status] || o.order_status;
+    const dateStr = (o.order_date||'').substring(0,10);
+
+    return `<div class="order-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
+            <div>
+                <div style="font-size:0.78rem;font-weight:700;">
+                    <a href="${SITE_URL}/pages/orders.php?q=${encodeURIComponent(o.order_number)}" target="_blank"
+                       style="color:inherit;text-decoration:none;">#${esc(o.order_number)}</a>
+                </div>
+                <div style="font-size:0.74rem;color:#555;margin-top:1px;">${esc(o.customer_name||'')}</div>
+                <div style="font-size:0.68rem;color:#aaa;margin-top:1px;">${dateStr} · ${o.item_count} รายการ</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+                <div style="font-size:0.8rem;font-weight:700;color:var(--pink);">฿${parseFloat(o.total_amount||0).toLocaleString('th-TH',{maximumFractionDigits:0})}</div>
+                <span style="font-size:0.62rem;color:${sc};background:${sc}1a;padding:1px 6px;border-radius:8px;font-weight:600;">${sl}</span>
+            </div>
+        </div>
+        ${o.platform_name ? `<div style="margin-top:4px;"><span style="background:${o.platform_color||'#888'};color:#fff;padding:1px 6px;border-radius:8px;font-size:0.62rem;">${esc(o.platform_name)}</span></div>` : ''}
+    </div>`;
+}
+
+/* ── Low Stock ────────────────────────────────────────────────── */
+function loadLowStock() {
+    const el = document.getElementById('lowStockResults');
+    el.innerHTML = '<div class="tools-hint" style="padding:10px;"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
+    fetch('', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ajax:'low_stock'})
+    })
+    .then(r => r.json())
+    .then(list => {
+        _lowLoaded = true;
+        if (!list.length) { el.innerHTML = '<div class="tools-hint">✅ สต็อกปกติทุกรายการ</div>'; return; }
+        // group by product
+        const byProd = {};
+        list.forEach(r => { (byProd[r.id] = byProd[r.id] || { name:r.name, sku:r.sku, items:[] }).items.push(r); });
+        el.innerHTML = Object.values(byProd).map(prod => {
+            const rows = prod.items.map(s => {
+                const pct = s.min_alert > 0 ? Math.min(100, Math.round(s.quantity/s.min_alert*100)) : 0;
+                const bc  = s.quantity === 0 ? '#e74c3c' : '#e67e22';
+                return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                    <span style="font-size:0.7rem;min-width:60px;color:#555;">${esc(s.size)}</span>
+                    <div class="ls-bar-wrap"><div class="ls-bar-fill" style="width:${pct}%;background:${bc};"></div></div>
+                    <span style="font-size:0.7rem;font-weight:700;min-width:28px;text-align:right;color:${bc};">${s.quantity}</span>
+                    <span style="font-size:0.62rem;color:#aaa;">/${s.min_alert}</span>
+                </div>`;
+            }).join('');
+            return `<div style="padding:10px 12px;border-bottom:1px solid #f5f5f5;">
+                <div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">${esc(prod.name)}${prod.sku?`<span style="color:#bbb;font-weight:400;margin-left:5px;font-size:0.65rem;">SKU:${esc(prod.sku)}</span>`:''}
+                </div>${rows}
+            </div>`;
+        }).join('');
+    })
+    .catch(() => { el.innerHTML = '<div class="tools-hint" style="color:#e74c3c;">โหลดไม่ได้</div>'; });
+}
+
+/* ── Insert text into reply box ───────────────────────────────── */
+function insertToReply(text) {
+    const ta = document.getElementById('replyText');
+    if (!ta) { alert('เลือกบทสนทนาก่อนเพื่อส่งข้อความ'); return; }
+    ta.value = ta.value ? ta.value + '\n' + text : text;
+    ta.focus();
+    autoResize(ta);
+    // scroll chat to bottom
+    const msgs = document.getElementById('chatMessages');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+}
 </script>
 
 <?php
