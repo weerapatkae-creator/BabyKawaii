@@ -332,78 +332,91 @@ const SEARCH_Q    = <?= json_encode($search) ?>;
 let _done = 0, _total = 0, _currentCount = <?= $totalFiles ?>;
 let _galPage = 1, _galTotal = <?= $totalFiles ?>, _galPer = <?= $PER ?>, _loading = false;
 
-const MAX_FILES    = 50;   // สูงสุดที่เลือกได้
-const BATCH_SIZE   = 10;   // อัปโหลดพร้อมกันสูงสุด
-const MAX_PX       = 1200; // resize ให้ด้านยาวไม่เกิน 1200px
-const JPEG_QUALITY = 0.82; // คุณภาพ JPEG หลัง resize
+const MAX_FILES    = 50;
+const BATCH_SIZE   = 10;
+const MAX_PX       = 1200;
+const JPEG_QUALITY = 0.82;
 
-// resize ด้วย Canvas → Blob (Promise)
+// resize ทีละ 1 รูป (sequential เพื่อไม่กิน memory mobile)
 function resizeImage(file) {
     return new Promise(resolve => {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = () => {
-            URL.revokeObjectURL(url);
-            let {width: w, height: h} = img;
-            if (w <= MAX_PX && h <= MAX_PX) {
-                // ไม่ต้อง resize — แปลงเป็น JPEG เฉยๆ ลดขนาดเล็กน้อย
-                const c = document.createElement('canvas');
-                c.width = w; c.height = h;
-                c.getContext('2d').drawImage(img, 0, 0);
-                c.toBlob(b => resolve(new File([b], file.name, {type:'image/jpeg'})),
-                         'image/jpeg', JPEG_QUALITY);
-            } else {
-                const ratio = Math.min(MAX_PX/w, MAX_PX/h);
-                w = Math.round(w * ratio);
-                h = Math.round(h * ratio);
-                const c = document.createElement('canvas');
-                c.width = w; c.height = h;
-                c.getContext('2d').drawImage(img, 0, 0, w, h);
-                c.toBlob(b => resolve(new File([b], file.name, {type:'image/jpeg'})),
-                         'image/jpeg', JPEG_QUALITY);
-            }
-        };
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
-        img.src = url;
+        try {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+
+            const cleanup = () => { try { URL.revokeObjectURL(url); } catch(e){} };
+
+            img.onerror = () => { cleanup(); resolve(file); };
+
+            img.onload = () => {
+                try {
+                    let w = img.naturalWidth  || img.width;
+                    let h = img.naturalHeight || img.height;
+                    if (!w || !h) { cleanup(); resolve(file); return; }
+
+                    if (w > MAX_PX || h > MAX_PX) {
+                        const r = Math.min(MAX_PX/w, MAX_PX/h);
+                        w = Math.round(w * r);
+                        h = Math.round(h * r);
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width  = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    cleanup(); // revoke หลัง draw แล้ว
+
+                    canvas.toBlob(blob => {
+                        canvas.width = canvas.height = 0; // free memory
+                        if (blob) resolve(blob);
+                        else      resolve(file);          // fallback ไฟล์ต้นฉบับ
+                    }, 'image/jpeg', JPEG_QUALITY);
+
+                } catch(e) { cleanup(); resolve(file); }
+            };
+
+            img.src = url;
+        } catch(e) { resolve(file); }
     });
 }
 
 async function handleFiles(fileList) {
     let files = [...fileList].filter(f => f.type.startsWith('image/'));
     if (!files.length) return;
-
     if (files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
 
     document.getElementById('queue').innerHTML = '';
-    document.getElementById('summary').style.display = 'block';
-    document.getElementById('summary').textContent = 'กำลังปรับขนาดรูป...';
-    document.getElementById('summary').style.color = '#7c3aed';
-    _done = 0; _total = files.length;
+    const sumEl = document.getElementById('summary');
+    sumEl.style.display = 'block';
+    sumEl.style.color   = '#7c3aed';
+    _done = 0; _total  = files.length;
     document.getElementById('imgInput').value = '';
 
-    // สร้าง queue items (preview ทันที)
+    // สร้าง queue items ทั้งหมด (preview ทันที)
     const items = files.map(file => {
         const item = createQueueItem(file);
         document.getElementById('queue').appendChild(item.el);
         return { file, item };
     });
 
-    // resize ทุกรูปก่อน (ทำ parallel ทั้งหมดได้ — CPU เฉยๆ ไม่ใช่ network)
-    document.getElementById('summary').textContent = `กำลังปรับขนาด 0/${_total} รูป...`;
-    const resized = await Promise.all(items.map(async ({file, item}, i) => {
-        item.el.querySelector('.pg-status').textContent = '↻';
-        const blob = await resizeImage(file);
-        item.el.querySelector('.pg-status').textContent = 'รอ...';
-        document.getElementById('summary').textContent =
-            `กำลังปรับขนาด ${i+1}/${_total} รูป...`;
-        return { blob, item };
-    }));
+    // resize + upload ทีละ batch (resize sequential ใน batch เพื่อ save memory)
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
 
-    // upload เป็น batch ละ BATCH_SIZE
-    document.getElementById('summary').textContent = `อัปโหลด 0/${_total}...`;
-    for (let i = 0; i < resized.length; i += BATCH_SIZE) {
-        const batch = resized.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(({blob, item}) => uploadFile(blob, item)));
+        // resize ทีละ 1 ใน batch นี้
+        const resized = [];
+        for (const {file, item} of batch) {
+            item.el.querySelector('.pg-status').textContent = '↻';
+            sumEl.textContent = `ปรับขนาด ${i + resized.length + 1}/${_total}...`;
+            const blob = await resizeImage(file);
+            item.el.querySelector('.pg-status').textContent = 'รอ...';
+            resized.push({ blob, item, name: file.name });
+        }
+
+        // upload batch นี้พร้อมกัน
+        sumEl.textContent = `อัปโหลด ${i+1}–${Math.min(i+BATCH_SIZE,_total)}/${_total}...`;
+        await Promise.all(resized.map(({blob, item, name}) => uploadFile(blob, item, name)));
     }
 }
 
@@ -417,11 +430,11 @@ function createQueueItem(file) {
     return { el };
 }
 
-function uploadFile(blob, item) {
+function uploadFile(blob, item, name) {
     return new Promise(resolve => {
         const fd = new FormData();
         fd.append('ajax_upload', '1');
-        fd.append('image', blob, blob.name || 'image.jpg');
+        fd.append('image', blob, name || 'image.jpg');
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST', UPLOAD_URL);
