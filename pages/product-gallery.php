@@ -39,15 +39,43 @@ if (isset($_GET['delete'])) {
     exit;
 }
 
-// ── Load images ───────────────────────────────────────────────────────────────
+// ── AJAX: load more (JSON) ────────────────────────────────────────────────────
+if (isset($_GET['ajax_list'])) {
+    header('Content-Type: application/json');
+    $q    = trim($_GET['q'] ?? '');
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $per  = 24;
+    $all  = [];
+    foreach (glob($uploadDir . '*.{jpg,jpeg,png,webp,gif}', GLOB_BRACE) as $path) {
+        $base = basename($path);
+        if ($q && stripos($base, $q) === false) continue;
+        $all[] = ['name'=>$base,'mtime'=>filemtime($path),'size'=>filesize($path)];
+    }
+    usort($all, fn($a,$b) => $b['mtime'] - $a['mtime']);
+    $total = count($all);
+    $items = array_map(fn($f) => [
+        'name' => $f['name'],
+        'url'  => $uploadUrl . $f['name'],
+        'size' => $f['size'] >= 1048576
+            ? round($f['size']/1048576,1).' MB'
+            : round($f['size']/1024).' KB',
+    ], array_slice($all, ($page-1)*$per, $per));
+    echo json_encode(['items'=>$items,'total'=>$total,'page'=>$page,'per'=>$per]);
+    exit;
+}
+
+// ── Load images (first page only) ────────────────────────────────────────────
 $search = trim($_GET['q'] ?? '');
-$files  = [];
+$PER    = 24;
+$allFiles = [];
 foreach (glob($uploadDir . '*.{jpg,jpeg,png,webp,gif}', GLOB_BRACE) as $path) {
     $base = basename($path);
     if ($search && stripos($base, $search) === false) continue;
-    $files[] = ['name'=>$base,'url'=>$uploadUrl.$base,'mtime'=>filemtime($path),'size'=>filesize($path)];
+    $allFiles[] = ['name'=>$base,'mtime'=>filemtime($path),'size'=>filesize($path)];
 }
-usort($files, fn($a,$b) => $b['mtime'] - $a['mtime']);
+usort($allFiles, fn($a,$b) => $b['mtime'] - $a['mtime']);
+$totalFiles = count($allFiles);
+$files = array_slice($allFiles, 0, $PER);
 $fmtSize = fn($b) => $b >= 1048576 ? round($b/1048576,1).' MB' : round($b/1024).' KB';
 
 require_once __DIR__ . '/../includes/header.php';
@@ -108,7 +136,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="page-header">
     <div>
         <h1 class="page-title">🖼️ คลังรูปสินค้า</h1>
-        <p class="text-muted mb-0" style="font-size:.82rem;" id="totalCount"><?= count($files) ?> รูป</p>
+        <p class="text-muted mb-0" style="font-size:.82rem;" id="totalCount"><?= $totalFiles ?> รูป</p>
     </div>
     <a href="<?= SITE_URL ?>/pages/products.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left me-1"></i> สินค้า
@@ -151,13 +179,13 @@ require_once __DIR__ . '/../includes/header.php';
 <div id="gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;">
 <?php foreach ($files as $f): ?>
 <div class="gal-card">
-    <img src="<?= htmlspecialchars($f['url']) ?>" loading="lazy" alt="">
+    <img src="<?= htmlspecialchars($uploadUrl.$f['name']) ?>" loading="lazy" alt="" decoding="async">
     <div class="gal-card-meta">
         <div class="fn"><?= htmlspecialchars($f['name']) ?></div>
         <div class="sz"><?= $fmtSize($f['size']) ?></div>
     </div>
     <div class="gal-actions">
-        <a href="<?= htmlspecialchars($f['url']) ?>" target="_blank" class="gal-btn">⛶</a>
+        <a href="<?= htmlspecialchars($uploadUrl.$f['name']) ?>" target="_blank" class="gal-btn">⛶</a>
         <a href="?delete=<?= urlencode($f['name']) ?>"
            onclick="return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
     </div>
@@ -171,11 +199,21 @@ require_once __DIR__ . '/../includes/header.php';
 <?php endif; ?>
 </div>
 
+<?php if ($totalFiles > $PER): ?>
+<div style="text-align:center;margin:20px 0;" id="loadMoreWrap">
+    <button class="btn btn-outline-secondary" onclick="loadMore()" id="loadMoreBtn">
+        โหลดเพิ่ม (เหลืออีก <?= $totalFiles - $PER ?> รูป)
+    </button>
+</div>
+<?php endif; ?>
+
 </div><!-- container -->
 
 <script>
-const UPLOAD_URL = '<?= SITE_URL ?>/pages/product-gallery.php';
-let _done = 0, _total = 0, _currentCount = <?= count($files) ?>;
+const UPLOAD_URL  = '<?= SITE_URL ?>/pages/product-gallery.php';
+const SEARCH_Q    = <?= json_encode($search) ?>;
+let _done = 0, _total = 0, _currentCount = <?= $totalFiles ?>;
+let _galPage = 1, _galTotal = <?= $totalFiles ?>, _galPer = <?= $PER ?>, _loading = false;
 
 function handleFiles(fileList) {
     const files = [...fileList].filter(f => f.type.startsWith('image/'));
@@ -282,6 +320,43 @@ function updateSummary() {
         const fail  = document.getElementById('queue').querySelectorAll('.error').length;
         s.textContent = `อัปโหลดเสร็จ ${ok} รูป` + (fail ? ` (ล้มเหลว ${fail})` : '');
         s.style.color = fail ? '#ef4444' : '#22c55e';
+    }
+}
+
+// ── Load more ────────────────────────────────────────────────────────────────
+async function loadMore() {
+    if (_loading) return;
+    _loading = true;
+    const btn = document.getElementById('loadMoreBtn');
+    if (btn) btn.textContent = 'กำลังโหลด...';
+
+    _galPage++;
+    const res  = await fetch(`${UPLOAD_URL}?ajax_list=1&page=${_galPage}&q=${encodeURIComponent(SEARCH_Q)}`);
+    const data = await res.json();
+    _loading   = false;
+
+    data.items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'gal-card';
+        card.innerHTML = `<img src="${item.url}" loading="lazy" decoding="async" alt="">
+            <div class="gal-card-meta">
+                <div class="fn">${item.name}</div>
+                <div class="sz">${item.size}</div>
+            </div>
+            <div class="gal-actions">
+                <a href="${item.url}" target="_blank" class="gal-btn">⛶</a>
+                <a href="?delete=${encodeURIComponent(item.name)}"
+                   onclick="return confirm('ลบรูปนี้?')" class="gal-btn del">✕</a>
+            </div>`;
+        document.getElementById('gallery').appendChild(card);
+    });
+
+    const loaded = _galPage * _galPer;
+    const wrap   = document.getElementById('loadMoreWrap');
+    if (loaded >= data.total) {
+        if (wrap) wrap.remove();
+    } else {
+        if (btn) btn.textContent = `โหลดเพิ่ม (เหลืออีก ${data.total - loaded} รูป)`;
     }
 }
 
