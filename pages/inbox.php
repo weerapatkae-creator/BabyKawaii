@@ -719,11 +719,9 @@ function pfIcon(string $slug, string $color = '#fff', string $size = '0.72rem'):
         </div>
         <div class="bk-actions">
             <span class="badge-status badge-active" id="globalOpenBadge">เปิด <?= $stats['open_count'] ?? 0 ?></span>
-            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="openQrManager()" title="ข้อความสำเร็จรูป" style="padding:6px 9px;">
-                <i class="fas fa-bolt"></i>
-            </button>
-            <button class="bk-btn bk-btn--ghost bk-btn--sm" onclick="toggleTools()" id="btnTools" title="เครื่องมือ" style="padding:6px 9px;">
-                <i class="fas fa-sliders"></i>
+            <button onclick="openQrManager()"
+                    style="background:var(--pink-light);color:var(--pink-dark);border:none;border-radius:20px;padding:4px 12px;font-size:0.76rem;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s;">
+                <i class="fas fa-bolt me-1"></i>ข้อความสำเร็จรูป
             </button>
         </div>
     </div>
