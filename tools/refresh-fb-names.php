@@ -26,17 +26,29 @@ $failed  = 0;
 $log     = [];
 
 foreach ($rows as $row) {
-    // ดึง raw response เพื่อ debug
-    $url = "https://graph.facebook.com/v19.0/{$row['customer_uid']}?fields=name,profile_pic&access_token=" . urlencode($row['page_access_token']);
-    $ch = curl_init($url);
+    // ใช้ Conversations API เพื่อดึงชื่อผู้เข้าร่วม
+    $convUrl = "https://graph.facebook.com/v19.0/me/conversations"
+        . "?user_id=" . urlencode($row['customer_uid'])
+        . "&fields=participants"
+        . "&access_token=" . urlencode($row['page_access_token']);
+    $ch = curl_init($convUrl);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>8, CURLOPT_SSL_VERIFYPEER=>false]);
     $raw = curl_exec($ch);
     curl_close($ch);
     $data = $raw ? json_decode($raw, true) : [];
 
-    $name   = $data['name'] ?? null;
-    $avatar = !empty($data['id']) ? "https://graph.facebook.com/{$data['id']}/picture?type=normal" : null;
+    $name   = null;
+    $avatar = "https://graph.facebook.com/{$row['customer_uid']}/picture?type=normal";
     $error  = $data['error']['message'] ?? null;
+
+    if (!empty($data['data'][0]['participants']['data'])) {
+        foreach ($data['data'][0]['participants']['data'] as $p) {
+            if (empty($p['email'])) { // ข้ามเพจ (มี email), เอาแค่ลูกค้า
+                $name = $p['name'] ?? null;
+                break;
+            }
+        }
+    }
 
     if ($name) {
         $pdo->prepare("UPDATE conversations SET customer_name=?, customer_avatar=? WHERE id=?")
@@ -45,7 +57,7 @@ foreach ($rows as $row) {
         $log[] = "✅ #{$row['id']} → {$name}";
     } else {
         $failed++;
-        $log[] = "❌ #{$row['id']} (uid:{$row['customer_uid']}) — " . ($error ?: "ไม่มีข้อมูล: " . substr($raw, 0, 120));
+        $log[] = "❌ #{$row['id']} (uid:{$row['customer_uid']}) — " . ($error ?: substr($raw, 0, 150));
     }
     usleep(200000);
 }
