@@ -1,6 +1,48 @@
         </div><!-- end main-content -->
     </div><!-- end wrapper -->
 
+    <!-- CSRF auto-protection: ฝัง token ลงทุกฟอร์ม POST + แนบ header ให้ fetch same-origin -->
+    <script>
+    (function () {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (!meta) return;
+        var TOKEN = meta.getAttribute('content');
+
+        // 1) ฝัง hidden input ลงทุกฟอร์มที่เป็น method POST
+        function injectForms(root) {
+            (root || document).querySelectorAll('form').forEach(function (f) {
+                if ((f.method || '').toUpperCase() !== 'POST') return;
+                if (f.querySelector('input[name="csrf_token"]')) return;
+                var i = document.createElement('input');
+                i.type = 'hidden'; i.name = 'csrf_token'; i.value = TOKEN;
+                f.appendChild(i);
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () { injectForms(); });
+        } else { injectForms(); }
+        // ครอบคลุมฟอร์มที่ถูกสร้างภายหลัง (เช่น modal) ก่อน submit
+        document.addEventListener('submit', function (e) {
+            if (e.target && e.target.tagName === 'FORM') injectForms(e.target.parentNode || document);
+        }, true);
+
+        // 2) แนบ X-CSRF-Token ให้ fetch ที่เป็น same-origin และไม่ใช่ GET/HEAD
+        var _fetch = window.fetch;
+        window.fetch = function (input, init) {
+            init = init || {};
+            var url    = (typeof input === 'string') ? input : (input && input.url) || '';
+            var method = (init.method || (typeof input === 'object' && input && input.method) || 'GET').toUpperCase();
+            var sameOrigin = url === '' || url.charAt(0) === '/' || url.indexOf(window.location.origin) === 0 || !/^https?:\/\//i.test(url);
+            if (method !== 'GET' && method !== 'HEAD' && sameOrigin) {
+                var h = new Headers(init.headers || (typeof input === 'object' && input && input.headers) || {});
+                if (!h.has('X-CSRF-Token')) h.set('X-CSRF-Token', TOKEN);
+                init.headers = h;
+            }
+            return _fetch.call(this, input, init);
+        };
+    })();
+    </script>
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Chart.js -->

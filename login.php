@@ -6,18 +6,49 @@ if (isset($_SESSION['admin_id'])) {
     exit;
 }
 
+// ─── Brute-force protection (per-IP) ──────────────────────────────────────────
+const LOGIN_MAX_ATTEMPTS = 5;      // ครั้งที่ผิดได้
+const LOGIN_WINDOW_MIN    = 15;    // ภายในกี่นาที
+$pdo = getDB();
+// สร้างตารางอัตโนมัติถ้ายังไม่มี (ไม่ต้องรัน migration เอง)
+$pdo->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ip_address   VARCHAR(45) NOT NULL,
+    username     VARCHAR(50),
+    success      TINYINT(1) DEFAULT 0,
+    attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ip_time (ip_address, attempted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$clientIp = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+function recentFailedLogins(PDO $pdo, string $ip, int $minutes): int {
+    $minutes = (int)$minutes; // trusted constant — inline เพื่อเลี่ยงปัญหา bind ใน INTERVAL
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM login_attempts
+        WHERE ip_address = ? AND success = 0 AND attempted_at > (NOW() - INTERVAL {$minutes} MINUTE)");
+    $stmt->execute([$ip]);
+    return (int)$stmt->fetchColumn();
+}
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if ($username && $password) {
-        $pdo = getDB();
+    $failCount = recentFailedLogins($pdo, $clientIp, LOGIN_WINDOW_MIN);
+
+    if ($failCount >= LOGIN_MAX_ATTEMPTS) {
+        $error = '🔒 พยายามเข้าสู่ระบบผิดเกิน ' . LOGIN_MAX_ATTEMPTS . ' ครั้ง '
+               . 'กรุณารอ ' . LOGIN_WINDOW_MIN . ' นาทีแล้วลองใหม่';
+    } elseif ($username && $password) {
         $stmt = $pdo->prepare("SELECT * FROM admin_users WHERE username = ? AND is_active = 1");
         $stmt->execute([$username]);
         $user = $stmt->fetch();
 
         if ($user && password_verify($password, $user['password'])) {
+            // สำเร็จ — ล้างประวัติ fail ของ IP นี้ + ป้องกัน session fixation
+            $pdo->prepare("DELETE FROM login_attempts WHERE ip_address = ?")->execute([$clientIp]);
+            session_regenerate_id(true);
             $_SESSION['admin_id']   = $user['id'];
             $_SESSION['admin_name'] = $user['full_name'] ?: $user['username'];
             $_SESSION['admin_role'] = $user['role'];
@@ -27,7 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ' . SITE_URL . '/dashboard.php');
             exit;
         } else {
-            $error = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+            // ผิด — บันทึก attempt
+            $pdo->prepare("INSERT INTO login_attempts (ip_address, username, success) VALUES (?,?,0)")
+                ->execute([$clientIp, $username]);
+            $remaining = max(0, LOGIN_MAX_ATTEMPTS - ($failCount + 1));
+            $error = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+                   . ($remaining > 0 && $remaining <= 3 ? " (เหลืออีก {$remaining} ครั้งก่อนถูกล็อก)" : '');
         }
     } else {
         $error = 'กรุณากรอกข้อมูลให้ครบ';

@@ -74,12 +74,45 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// ─── CSRF Protection ──────────────────────────────────
+// สร้าง/ดึง token ของ session (สร้างครั้งเดียวต่อ session)
+function csrf_token(): string {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+// hidden input สำหรับฝังในฟอร์ม (เผื่อ render ฝั่ง server)
+function csrf_field(): string {
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrf_token()) . '">';
+}
+
+// ตรวจ token ทุกครั้งที่เป็น POST — เรียกอัตโนมัติใน requireLogin()
+// รับ token จาก $_POST['csrf_token'] หรือ header X-CSRF-Token (AJAX)
+// หมายเหตุ: api/ webhooks ไม่เรียก requireLogin() จึงไม่ถูกบังคับ CSRF (ใช้ X-API-Key แทน)
+function csrf_verify(): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') return;
+    $sent  = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    $valid = !empty($_SESSION['csrf_token']) && is_string($sent) && hash_equals($_SESSION['csrf_token'], $sent);
+    if (!$valid) {
+        http_response_code(403);
+        die('<div style="padding:20px;margin:40px auto;max-width:480px;background:#fff0f0;border:1px solid #f00;border-radius:8px;font-family:sans-serif;text-align:center;">
+            <h3>⚠️ คำขอไม่ถูกต้อง (CSRF)</h3>
+            <p>เซสชันอาจหมดอายุ กรุณากลับไปรีเฟรชหน้าเดิมแล้วลองใหม่อีกครั้ง</p>
+            <a href="' . SITE_URL . '/dashboard.php" style="color:#9b72cf;">← กลับหน้าแรก</a></div>');
+    }
+}
+
 // ─── Auth ─────────────────────────────────────────────
 function requireLogin() {
     if (!isset($_SESSION['admin_id'])) {
         header('Location: ' . SITE_URL . '/login.php');
         exit;
     }
+    // ทุกหน้า admin เรียก requireLogin/requireAdmin ที่บนสุดก่อนจัดการ POST
+    // จึงเป็นจุดบังคับ CSRF ที่ครอบคลุมทุกฟอร์ม + AJAX ของฝั่ง admin
+    csrf_verify();
 }
 
 function requireAdmin() {

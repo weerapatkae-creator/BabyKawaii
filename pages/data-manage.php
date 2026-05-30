@@ -177,6 +177,22 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
+    <!-- ── Full DB Backup ─────────────────────────────────────────────── -->
+    <div class="card mb-4" style="border:2px solid #dcfce7;">
+        <div class="card-header" style="background:#f0fff4;border-bottom:1px solid #dcfce7;">
+            <span class="card-title" style="color:#15803d;">💾 สำรองฐานข้อมูล (Backup)</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3" style="font-size:0.88rem;">
+                ดาวน์โหลดทั้งฐานข้อมูลเป็นไฟล์ <code>.sql</code> (โครงสร้าง + ข้อมูลทุกตาราง)
+                <strong class="text-success">แนะนำให้กดสำรองก่อนลบข้อมูลใน Danger Zone ทุกครั้ง</strong>
+            </p>
+            <a href="<?= SITE_URL ?>/pages/backup-db.php" class="btn btn-success">
+                <i class="fas fa-download me-1"></i> ดาวน์โหลด Backup (.sql)
+            </a>
+        </div>
+    </div>
+
     <!-- ── Danger Zone ────────────────────────────────────────────────── -->
     <div class="card mb-4" style="border:2px solid #fee2e2;">
         <div class="card-header" style="background:#fff5f5;border-bottom:1px solid #fee2e2;">
