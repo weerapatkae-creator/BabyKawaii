@@ -9,6 +9,9 @@ assets/uploads/media/
 # ─── Claude local settings (มี path เฉพาะเครื่อง) ──
 .claude/settings.local.json
 
+# ─── Claude skills: ใช้ใน local เท่านั้น ห้าม commit/push ──
+.claude/skills/
+
 # ─── System / IDE ─────────────────────────────────────
 .DS_Store
 Thumbs.db
