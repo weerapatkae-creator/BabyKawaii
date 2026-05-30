@@ -572,23 +572,33 @@ $currentType = $product['product_type'] ?? 'single';
 
 <!-- ── Media Picker Modal ──────────────────────────────────────────────────── -->
 <!-- Media Picker — custom overlay, ไม่ใช้ Bootstrap modal -->
+<!-- Media Picker Overlay -->
 <div id="mpOverlay" onclick="mpOverlayClick(event)"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;overflow-y:auto;padding:16px;">
-    <div id="mpBox" style="max-width:960px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;
+            display:none;align-items:center;justify-content:center;padding:16px;">
+    <div id="mpBox" onclick="event.stopPropagation()"
+         style="width:100%;max-width:960px;max-height:88vh;background:#fff;border-radius:16px;
+                overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.3);
+                display:flex;flex-direction:column;">
 
-        <!-- header -->
-        <div style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:12px;">
+        <!-- header (sticky) -->
+        <div style="background:linear-gradient(135deg,#E91E8C,#9B72CF);color:#fff;
+                    padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
             <i class="fas fa-images"></i>
-            <span style="font-weight:700;font-size:.95rem;flex:1;">คลังรูปภาพ</span>
+            <span style="font-weight:700;font-size:.9rem;flex:1;">คลังรูปภาพ</span>
             <input type="text" id="mpSearch" placeholder="🔍 ค้นหา..."
                    oninput="mpSearchTimer()"
-                   style="max-width:200px;border-radius:20px;border:none;padding:5px 12px;font-size:.82rem;outline:none;">
+                   style="max-width:180px;border-radius:20px;border:none;padding:5px 12px;
+                          font-size:.82rem;outline:none;">
             <button type="button" onclick="mpClose()"
-                    style="background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:50%;width:30px;height:30px;font-size:1rem;cursor:pointer;line-height:1;">✕</button>
+                    style="background:rgba(255,255,255,.25);border:none;color:#fff;
+                           border-radius:50%;width:30px;height:30px;font-size:1.1rem;
+                           cursor:pointer;line-height:30px;text-align:center;flex-shrink:0;">✕</button>
         </div>
 
-        <!-- body -->
-        <div style="padding:12px;background:#f8f5fc;min-height:200px;">
+        <!-- scrollable body -->
+        <div style="overflow-y:auto;flex:1;padding:12px;background:#f8f5fc;
+                    -webkit-overflow-scrolling:touch;">
             <div id="mpLoading" style="display:none;text-align:center;padding:40px;color:#aaa;">
                 <div class="spinner-border spinner-border-sm"></div>
                 <div style="margin-top:8px;font-size:.8rem;">กำลังโหลด...</div>
@@ -597,13 +607,15 @@ $currentType = $product['product_type'] ?? 'single';
                 <div style="font-size:2.5rem;">🖼️</div>
                 <div style="margin-top:8px;font-size:.85rem;">ไม่พบรูปภาพ</div>
                 <a href="<?= SITE_URL ?>/pages/product-gallery.php" target="_blank"
-                   style="display:inline-block;margin-top:10px;font-size:.78rem;color:#9b72cf;">ไปคลังรูปสินค้า ↗</a>
+                   style="display:inline-block;margin-top:10px;font-size:.78rem;color:#9b72cf;">
+                   ไปคลังรูปสินค้า ↗</a>
             </div>
             <div id="mpGrid" onclick="mpGridClick(event)"
-                 style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;"></div>
+                 style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;"></div>
             <div id="mpLoadMore" style="display:none;text-align:center;padding:12px;">
                 <button type="button" onclick="mpLoad(mpPage+1)"
-                        style="padding:6px 20px;border:1.5px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:.82rem;">
+                        style="padding:6px 20px;border:1.5px solid #ccc;border-radius:8px;
+                               background:#fff;cursor:pointer;font-size:.82rem;">
                     โหลดเพิ่ม
                 </button>
             </div>
