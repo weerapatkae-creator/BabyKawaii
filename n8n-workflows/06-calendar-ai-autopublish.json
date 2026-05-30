@@ -1,0 +1,266 @@
+{
+  "name": "BabyKawaii — Calendar AI Auto Publish",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Every Minute Check",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [100, 300],
+      "parameters": { "triggerTimes": { "item": [{ "mode": "everyMinute" }] } }
+    },
+    {
+      "id": "get-scheduled",
+      "name": "Get Scheduled Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [320, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.BABYKAWAII_URL}}/api/calendar-get-scheduled.php",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headers": { "parameters": [ { "name": "X-API-Key", "value": "={{$env.BABYKAWAII_API_KEY}}" } ] },
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      }
+    },
+    {
+      "id": "check-has-posts",
+      "name": "Has Posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [540, 300],
+      "parameters": { "conditions": { "number": [ { "value1": "={{ $json.count }}", "operation": "larger", "value2": 0 } ] } }
+    },
+    {
+      "id": "split-posts",
+      "name": "Split Each Post",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [760, 200],
+      "parameters": { "batchSize": 1, "options": {} }
+    },
+    {
+      "id": "split-platforms",
+      "name": "Split Each Platform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 200],
+      "parameters": {
+        "jsCode": "const post = $input.first().json;\nconst platforms = post.platforms || [];\nreturn platforms.map(pf => ({\n  json: {\n    post_id: post.post_id,\n    title: post.title,\n    post_type: post.post_type,\n    caption: pf.caption,\n    hashtags: pf.hashtags,\n    media: post.media,\n    platform_id: pf.platform_id,\n    platform_name: pf.platform_name,\n    platform_type: pf.platform_type,\n    product: post.product,\n    promotion: post.promotion,\n    callback_url: post.callback_url,\n    api_key: post.api_key\n  }\n}));"
+      }
+    },
+    {
+      "id": "build-ai-request",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 200],
+      "parameters": {
+        "jsCode": "const d = $json;\nconst p = d.product || {};\nconst promo = d.promotion || {};\nconst lines = [];\nlines.push('หัวข้อโพสต์: ' + (d.title || '-'));\nif (p.name)  lines.push('สินค้า: ' + p.name + (p.price ? (' ราคา ' + p.price + ' บาท') : ''));\nif (promo && promo.name) lines.push('โปรโมชั่น: ' + promo.name);\nlines.push('ประเภทโพสต์: ' + (d.post_type || 'post'));\nlines.push('แพลตฟอร์ม: ' + (d.platform_name || d.platform_type || ''));\nconst sys = 'คุณเป็นทีมการตลาดของร้าน BabyKawaii ร้านเสื้อผ้าและของใช้เด็กแนวน่ารัก (kawaii) '\n  + 'เขียนแคปชั่นโซเชียลภาษาไทย โทนน่ารักเป็นกันเอง มีอีโมจิพอเหมาะ กระตุ้นให้อยากซื้อ '\n  + 'ความยาวเหมาะกับแพลตฟอร์ม ' + (d.platform_name || d.platform_type || '') + ' '\n  + 'ห้ามใส่แฮชแท็ก (ระบบจะเติมให้เอง) ตอบเฉพาะตัวแคปชั่นเท่านั้น';\nconst needsAI = !(d.caption && String(d.caption).trim());\nreturn [{ json: { ...d, needsAI, _sys: sys, _user: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "ai-needed",
+      "name": "AI Caption Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1380, 200],
+      "parameters": { "conditions": { "boolean": [ { "value1": "={{ $json.needsAI }}", "value2": true } ] } }
+    },
+    {
+      "id": "openai-generate",
+      "name": "OpenAI Generate Caption",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1580, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.OPENAI_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": {
+          "contentType": "json",
+          "body": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.8, max_tokens: 220, messages: [ { role: 'system', content: $json._sys }, { role: 'user', content: $json._user } ] }) }}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "apply-ai-caption",
+      "name": "Apply AI Caption",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 120],
+      "parameters": {
+        "jsCode": "const src = $('Build AI Request').item.json;\nlet ai = '';\ntry { ai = ($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content || '').trim(); } catch (e) {}\nconst base = ai || (src.caption && String(src.caption).trim()) || src.title || '';\nconst cap = src.hashtags ? (base + '\\n\\n' + src.hashtags) : base;\nreturn [{ json: { ...src, caption: cap, ai_generated: !!ai } }];"
+      }
+    },
+    {
+      "id": "route-platform",
+      "name": "Route by Platform",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [2000, 200],
+      "parameters": {
+        "mode": "expression",
+        "output": "={{ $json.platform_type.toLowerCase() }}",
+        "rules": {
+          "rules": [
+            { "value": "facebook", "outputKey": "facebook" },
+            { "value": "instagram", "outputKey": "instagram" },
+            { "value": "tiktok", "outputKey": "tiktok" },
+            { "value": "line", "outputKey": "line" }
+          ]
+        },
+        "options": { "fallbackOutput": "none" }
+      }
+    },
+    {
+      "id": "publish-facebook",
+      "name": "Publish to Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2240, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{$env.FB_PAGE_ID}}/photos",
+        "body": {
+          "parameters": [
+            { "name": "access_token", "value": "={{$env.FB_PAGE_TOKEN}}" },
+            { "name": "message", "value": "={{ $json.caption }}" },
+            { "name": "url", "value": "={{ $json.media[0]?.url || '' }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "publish-instagram",
+      "name": "Publish to Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2240, 230],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{$env.IG_ACCOUNT_ID}}/media",
+        "body": {
+          "parameters": [
+            { "name": "access_token", "value": "={{$env.IG_ACCESS_TOKEN}}" },
+            { "name": "caption", "value": "={{ $json.caption }}" },
+            { "name": "image_url", "value": "={{ $json.media[0]?.url || '' }}" },
+            { "name": "media_type", "value": "={{ $json.post_type === 'reel' ? 'REELS' : 'IMAGE' }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "publish-tiktok",
+      "name": "Publish to TikTok",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2240, 380],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/video/init/",
+        "headers": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.TIKTOK_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json; charset=UTF-8" }
+          ]
+        },
+        "body": {
+          "contentType": "json",
+          "body": "={\n  \"post_info\": {\n    \"title\": \"{{ $json.caption.substring(0,150) }}\",\n    \"privacy_level\": \"PUBLIC_TO_EVERYONE\",\n    \"disable_comment\": false\n  },\n  \"source_info\": {\n    \"source\": \"PULL_FROM_URL\",\n    \"video_url\": \"{{ $json.media[0]?.url || '' }}\"\n  }\n}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "collect-results",
+      "name": "Collect Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2480, 230],
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst prev  = $('Route by Platform').first().json;\n\nlet status = 'published';\nlet platformPostId = null;\nlet error = null;\n\ntry {\n  const body = input.json;\n  if (body.error || body.code === 'error') {\n    status = 'failed';\n    error  = JSON.stringify(body.error || body);\n  } else {\n    platformPostId = body.id || body.post_id || body.publish_id || null;\n  }\n} catch(e) {\n  status = 'failed';\n  error  = e.message;\n}\n\nreturn [{ json: {\n  post_id:          prev.post_id,\n  platform_id:      prev.platform_id,\n  platform_name:    prev.platform_name,\n  status:           status,\n  platform_post_id: platformPostId,\n  error:            error,\n  callback_url:     prev.callback_url,\n  api_key:          prev.api_key\n}}];"
+      }
+    },
+    {
+      "id": "report-back",
+      "name": "Report Back to BabyKawaii",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2700, 230],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "headers": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $json.api_key }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": {
+          "contentType": "json",
+          "body": "={{ JSON.stringify({ post_id: $json.post_id, results: [{ platform_id: $json.platform_id, status: $json.status, platform_post_id: $json.platform_post_id, error: $json.error }] }) }}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-ai",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1160, -40],
+      "parameters": {
+        "width": 720,
+        "height": 200,
+        "content": "## ✨ AI Caption (ดึง pattern จาก Social Publishing Factory)\nถ้าโพสต์ในปฏิทิน **ไม่ได้กรอก caption** สำหรับแพลตฟอร์มนั้น ระบบจะให้ OpenAI เขียนให้อัตโนมัติ\nจากหัวข้อ + สินค้า + โปรโมชั่น โทนน่ารักแบบ BabyKawaii แล้วเติม hashtags ต่อท้าย\n\n**ต้องตั้ง env:** `OPENAI_API_KEY` (ใช้ gpt-4o-mini)\nถ้ากรอก caption เองในปฏิทินแล้ว จะข้าม AI (ประหยัด token)"
+      }
+    }
+  ],
+  "connections": {
+    "Every Minute Check":    { "main": [[{ "node": "Get Scheduled Posts",   "type": "main", "index": 0 }]] },
+    "Get Scheduled Posts":   { "main": [[{ "node": "Has Posts?",            "type": "main", "index": 0 }]] },
+    "Has Posts?":            { "main": [[{ "node": "Split Each Post",       "type": "main", "index": 0 }], []] },
+    "Split Each Post":       { "main": [[{ "node": "Split Each Platform",   "type": "main", "index": 0 }]] },
+    "Split Each Platform":   { "main": [[{ "node": "Build AI Request",      "type": "main", "index": 0 }]] },
+    "Build AI Request":      { "main": [[{ "node": "AI Caption Needed?",    "type": "main", "index": 0 }]] },
+    "AI Caption Needed?":    {
+      "main": [
+        [{ "node": "OpenAI Generate Caption", "type": "main", "index": 0 }],
+        [{ "node": "Route by Platform",       "type": "main", "index": 0 }]
+      ]
+    },
+    "OpenAI Generate Caption": { "main": [[{ "node": "Apply AI Caption",    "type": "main", "index": 0 }]] },
+    "Apply AI Caption":        { "main": [[{ "node": "Route by Platform",   "type": "main", "index": 0 }]] },
+    "Route by Platform":     {
+      "main": [
+        [{ "node": "Publish to Facebook",  "type": "main", "index": 0 }],
+        [{ "node": "Publish to Instagram", "type": "main", "index": 0 }],
+        [{ "node": "Publish to TikTok",    "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Publish to Facebook":   { "main": [[{ "node": "Collect Result",        "type": "main", "index": 0 }]] },
+    "Publish to Instagram":  { "main": [[{ "node": "Collect Result",        "type": "main", "index": 0 }]] },
+    "Publish to TikTok":     { "main": [[{ "node": "Collect Result",        "type": "main", "index": 0 }]] },
+    "Collect Result":        { "main": [[{ "node": "Report Back to BabyKawaii","type":"main","index":0}]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "babykawaii"
+  },
+  "tags": ["babykawaii", "calendar", "autopublish", "ai"]
+}

@@ -429,14 +429,27 @@ try {
                     </p>
 
                     <?php
-                    $workflows = [
-                        ['01-admin-line-notifications.json', '📢 Admin LINE Notifications',
-                         'แจ้งเตือนออเดอร์ใหม่ + สต็อกใกล้หมด ผ่าน LINE Notify'],
-                        ['02-daily-sales-report.json',       '📊 Daily Sales Report',
-                         'รายงานยอดขายประจำวันส่ง LINE ทุก 8:00 น.'],
-                        ['03-line-order-bot.json',           '🤖 LINE Order Bot',
-                         'Chatbot รับออเดอร์จากลูกค้า ผ่าน LINE'],
+                    // คำอธิบายที่อ่านง่ายต่อชื่อไฟล์ (ไฟล์ที่ไม่อยู่ในแมพจะ fallback เป็นชื่อไฟล์)
+                    $wfMeta = [
+                        '01-admin-line-notifications.json' => ['📢 Admin LINE Notifications', 'แจ้งเตือนออเดอร์ใหม่ + สต็อกใกล้หมด ผ่าน LINE'],
+                        '02-daily-sales-report.json'       => ['📊 Daily Sales Report',       'รายงานยอดขายประจำวันส่ง LINE ทุก 8:00 น.'],
+                        '03-social-dm-intake.json'         => ['💬 Social DM Intake',          'ดึงข้อความจาก FB/IG/TikTok เข้า Inbox'],
+                        '04-fb-ig-chatbot.json'            => ['🤖 FB / IG Chatbot',           'ตอบลูกค้าอัตโนมัติบน Facebook & Instagram'],
+                        '05-tiktok-order-sync.json'        => ['🛒 TikTok Order Sync',         'ซิงค์ออเดอร์จาก TikTok Shop เข้าระบบ'],
+                        '06-calendar-ai-autopublish.json'  => ['✨ Calendar AI Auto-Publish',  'โพสต์ตามปฏิทิน + AI เขียน caption ให้อัตโนมัติเมื่อเว้นว่าง'],
+                        '07-n8n-error-alert.json'          => ['⚠️ n8n Error Alert',           'แจ้งเตือนผ่าน LINE เมื่อ workflow ใดล้มเหลว'],
+                        'calendar-autopublish.json'        => ['📅 Calendar Auto-Publish',     'โพสต์คอนเทนต์ตามปฏิทินอัตโนมัติทุกแพลตฟอร์ม'],
                     ];
+                    $wfDir   = __DIR__ . '/../n8n-workflows';
+                    $wfFiles = glob($wfDir . '/*.json') ?: [];
+                    sort($wfFiles);
+                    $workflows = [];
+                    foreach ($wfFiles as $path) {
+                        $file = basename($path);
+                        [$title, $desc] = $wfMeta[$file] ?? ['🔧 ' . $file, 'n8n workflow'];
+                        $workflows[] = [$file, $title, $desc];
+                    }
+                    $wfCount = count($workflows);
                     foreach ($workflows as [$file, $title, $desc]):
                     ?>
                     <div class="workflow-item mb-3">
@@ -544,7 +557,7 @@ try {
                             <span class="step-num">5</span>
                             <div>
                                 <strong>Import Workflows</strong><br>
-                                ดาวน์โหลด JSON 3 ไฟล์ด้านบน → n8n → Import workflow → แทนที่<br>
+                                ดาวน์โหลด JSON <?= $wfCount ?> ไฟล์ด้านบน → n8n → Import workflow → แทนที่<br>
                                 <code class="small">YOUR_SITE_URL</code> → URL เว็บนี้<br>
                                 <code class="small">YOUR_API_KEY</code> → API Key ด้านบน<br>
                                 <code class="small">YOUR_LINE_NOTIFY_TOKEN</code> → token LINE<br>
@@ -570,7 +583,7 @@ try {
                             <span class="step-num">8</span>
                             <div>
                                 <strong>Activate Workflows</strong><br>
-                                เปิด workflows ทั้ง 3 ใน n8n (toggle Active)
+                                เปิด workflows ทั้ง <?= $wfCount ?> ใน n8n (toggle Active)
                             </div>
                         </div>
                     </div>

@@ -1,0 +1,87 @@
+{
+  "name": "BabyKawaii — n8n Error Alert to LINE",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "⚠️ Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "position": [-240, 0],
+      "parameters": {},
+      "typeVersion": 1
+    },
+    {
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "📝 จัดรูปแบบข้อความแจ้งเตือน",
+      "type": "n8n-nodes-base.code",
+      "position": [20, 0],
+      "parameters": {
+        "jsExpression": "const wf = $json.workflow || {};\nconst ex = $json.execution || {};\nconst err = ($json.execution && $json.execution.error) || $json.error || {};\nconst msg = err.message || 'ไม่ทราบสาเหตุ';\nconst when = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });\nconst text =\n  '🚨 n8n Workflow ล้มเหลว 🚨\\n\\n' +\n  '📋 Workflow: ' + (wf.name || '-') + '\\n' +\n  '🕒 เวลา: ' + when + '\\n' +\n  '❌ Error: ' + msg + '\\n' +\n  (ex.url ? ('🔗 ดูรายละเอียด: ' + ex.url) : '');\nreturn [{ json: { lineText: text } }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "📲 ส่ง LINE (Messaging API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [280, 0],
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/push",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_LINE_CHANNEL_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"YOUR_LINE_ADMIN_USER_ID\",\n  \"messages\": [\n    { \"type\": \"text\", \"text\": {{ JSON.stringify($json.lineText) }} }\n  ]\n}",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-300, -220],
+      "parameters": {
+        "width": 620,
+        "height": 160,
+        "content": "## ⚙️ วิธีใช้งาน (BabyKawaii)\n1. ไปที่ n8n → **Settings → ตั้งเป็น Error Workflow** ของทุก workflow ในร้าน\n2. แทนที่ `YOUR_LINE_CHANNEL_ACCESS_TOKEN` และ `YOUR_LINE_ADMIN_USER_ID`\n   ด้วยค่าจริงในหน้า Admin → เชื่อมต่อระบบ (integrations.php)\n3. ใช้ **LINE Messaging API push** (api.line.me) ไม่ใช่ LINE Notify ที่ถูกปิดไปแล้ว\n\nที่มา: ดัดแปลงจาก \"n8n Error Report to Line\" — Ai Flow n8n catalog"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "connections": {
+    "⚠️ Error Trigger": {
+      "main": [
+        [
+          { "node": "📝 จัดรูปแบบข้อความแจ้งเตือน", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📝 จัดรูปแบบข้อความแจ้งเตือน": {
+      "main": [
+        [
+          { "node": "📲 ส่ง LINE (Messaging API)", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  }
+}
